@@ -283,26 +283,31 @@ typedef struct _DLL_CCL_UL_T
 
 
 typedef void (*pITEM_TEST_F)();
+
+
+typedef void (*pITEM_TEST_INIT)(int item);
 typedef struct _DATA_ITEM_FUN_T
 {
     DATA_TEST_ITEM item;
-    pITEM_TEST_F pFunItem;
+    pITEM_TEST_INIT pFunItem;
     pITEM_TEST_F pFunOdp;
+	const char *token;
 } DATA_ITEM_FUN_T;
 
 
 
 //---变量---
-static UINT8 gSmsBuff[200];  // 短信包
-static char *gProcessName;
+static UINT8 s_SmsBuff[200];  // 短信包
+static char *s_ProcessName;
+static int s_TestOption;
+static unsigned char s_DstRcv[3];
+static unsigned char s_CallingID[3];
+static unsigned char s_CalledID[3];
+static unsigned char s_GroupID[3];
+static int s_Message_len;
+static char s_SrcDev;
+static char s_DstDev;
 
-static int gTestOption;
-static unsigned char gDstRcv[3];
-static unsigned char gCallingID[3];
-static unsigned char gCalledID[3];
-static int gMessage_len;
-static char gSrcDev;
-static char gDstDev;
 
 
 //---变量-ipc-Socke--
@@ -341,6 +346,8 @@ static int digit_get(const char *prmpt, char *buff, int sz, int *pDigit);
 static unsigned long get_file_size(const char *path);
 static int Msg_Get(const char *prmpt, char *buff, int sz);
 static void SetSmsData();
+static void set_item_ID_input(int item, unsigned char *pBuff, char SrcDev, char DstDev);
+
 
 
 //---函数-ipc-Socke--
@@ -384,10 +391,6 @@ static void TestDataCheckTaskCreate();
 static void *TestDataCheckTask(void * p);
 
 
-
-
-
-
 //---函数-功能测试-具体操作--
 static void ODP_ShortMessage(void);             //8
 static void ODP_NearNodeInfoQuery(void);        //7
@@ -399,15 +402,21 @@ static void ODP_MsGpsReport(void);              //2
 static void ODP_MsEnableIdt(void);              //1
 static void ODP_MsDisableIdt(void);             //0
 //---函数-功能测试-init--
-static void Item_MSRemoteKillTest();            //0
-static void Item_MsEnableTest();                //1
-static void Item_MsGpsReportTest();             //2
-static void Item_NasDisableTest();              //3
-static void Item_NasEnableTest();               //4
-static void Item_NasGpsReportTest();            //5
-static void Item_NasStunTest();                 //6
-static void Item_NeighborQueryTest();           //7
-static void Item_ShortMessageTest();            //8
+static void Item_MSRemoteKillTest(int item);            //0
+static void Item_MsEnableTest(int item);                //1
+static void Item_MsGpsReportTest(int item);             //2
+static void Item_NasDisableTest(int item);              //3
+static void Item_NasEnableTest(int item);               //4
+static void Item_NasGpsReportTest(int item);            //5
+static void Item_NasStunTest(int item);                 //6
+static void Item_NeighborQueryTest(int item);           //7
+static void Item_ShortMessageTest(int item);            //8
+
+
+
+
+
+#if 0
 
 // op-Item
 DATA_ITEM_FUN_T atDataItemFun[] = {
@@ -422,6 +431,22 @@ DATA_ITEM_FUN_T atDataItemFun[] = {
     {ITEM_SHORT_MESSAGE  , Item_ShortMessageTest   , ODP_ShortMessage      },   // 8
     {ITEM_MAX            , NULL                    , NULL                  }    // 9
 };
+#endif
+
+// op-Item
+DATA_ITEM_FUN_T atDataItemFun[] = {
+    {ITEM_MS_REMOTE_KILL , Item_MSRemoteKillTest   , ODP_MsDisableIdt      , "MS"},   // 0
+    {ITEM_MS_ENABLE      , Item_MsEnableTest       , ODP_MsEnableIdt       , "MS"},   // 1
+    {ITEM_MS_GPS_REPORT  , Item_MsGpsReportTest    , ODP_MsGpsReport       , "MS"},   // 2
+    {ITEM_NAS_DISABLE    , Item_NasDisableTest     , ODP_NasDisableIdt     , "Nas"},   // 3
+    {ITEM_NAS_ENABLE     , Item_NasEnableTest      , ODP_NasEnableIdt      , "Nas"},   // 4
+    {ITEM_NAS_GPS_REPORT , Item_NasGpsReportTest   , ODP_NasGpsReport      , "Nas"},   // 5
+    {ITEM_NAS_STUN       , Item_NasStunTest        , ODP_NasStunIdt        , "Nas"},   // 6
+    {ITEM_NEIGHBOR_QUERY , Item_NeighborQueryTest  , ODP_NearNodeInfoQuery , "Nas"},   // 7
+    {ITEM_SHORT_MESSAGE  , Item_ShortMessageTest   , ODP_ShortMessage      , "Group"},   // 8
+    {ITEM_MAX            , NULL                    , NULL                  , NULL}    // 9
+};
+
 
 //---函数定义---
 
@@ -524,7 +549,7 @@ void SetSmsData()
 {
     int  i;
     char buff[100];
-    int len = sizeof(gSmsBuff);
+    int len = sizeof(s_SmsBuff);
 
 SET_SMS_DATA:
 
@@ -537,25 +562,25 @@ SET_SMS_DATA:
         }
     }
 
-    gMessage_len = strlen(buff); // 查看输入的长度
-    printf("gMessage_len=(%d)\n", gMessage_len);
+    s_Message_len = strlen(buff); // 查看输入的长度
+    printf("s_Message_len=(%d)\n", s_Message_len);
 
-    if (gMessage_len*2 > len)
+    if (s_Message_len*2 > len)
     {
         printf("Set sms len is too long\n\n");
         goto SET_SMS_DATA;
     }
 
-    memset(gSmsBuff, 0, len);
+    memset(s_SmsBuff, 0, len);
 
-    for (i = 0; i < gMessage_len; i++)
+    for (i = 0; i < s_Message_len; i++)
     {
-        gSmsBuff[i*2] = buff[i];
+        s_SmsBuff[i*2] = buff[i];
     }
 
-    for (i = 0; i < gMessage_len*2; i++)
+    for (i = 0; i < s_Message_len*2; i++)
     {
-        printf("%d=(%c)(%d)\n", i, gSmsBuff[i], gSmsBuff[i]);
+        printf("%d=(%c)(%d)\n", i, s_SmsBuff[i], s_SmsBuff[i]);
     }
     
 }
@@ -583,10 +608,9 @@ int get_value_u32(const char *name, const char *prmpt, unsigned int *pDstID)
     char buff[11];
     while (1)
     {
-        printf("In function [%s] \ninput now:\n\n", name);
+        printf("In fun:[%s], input now:\n\n", name);
         if (digit_get(prmpt, buff, sizeof(buff), (int *)pDstID) == GET_SUCCEED)
         {
-//            printf("\nYou get %d(%#010x)\n\n", *pDstID, *pDstID);
             break;
         }
     }
@@ -790,13 +814,13 @@ void delay(unsigned long msec)
 
 void ProcessNameSet(char *name)
 {
-    gProcessName = name;
+    s_ProcessName = name;
 }
 
 
 char *ProcessNameGet()
 {
-    return (gProcessName == NULL )? NULL :gProcessName;
+    return (s_ProcessName == NULL )? NULL :s_ProcessName;
 }
 
 // 获取文件字节数
@@ -889,17 +913,17 @@ void IPC_SocketDataCc2cclInit()
 
 
 // ccl2cc  
-static int g_CCsigSocket;
+static int s_CCsigSocket;
 static struct sockaddr_in g_Ccl2ccSigAddr;
 static void IPC_Ccl2ccInit();
 // ccl2cc
 void IPC_Ccl2ccInit()
 {
 
-    g_CCsigSocket = socket(AF_INET, SOCK_DGRAM, 0);
-    if (g_CCsigSocket < 0)
+    s_CCsigSocket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (s_CCsigSocket < 0)
     {
-        printf("[%s:%d] err: creat g_CCsigSocket\n", __FUNCTION__, __LINE__);
+        printf("[%s:%d] err: creat s_CCsigSocket\n", __FUNCTION__, __LINE__);
         perror("socket>");
         exit(EXIT_FAILURE);
     }
@@ -910,7 +934,7 @@ void IPC_Ccl2ccInit()
     g_Ccl2ccSigAddr.sin_port = htons(SOCK_PORT_CCL_CC_S);
     g_Ccl2ccSigAddr.sin_addr.s_addr = INADDR_ANY;
     
-    if (bind(g_CCsigSocket, (struct sockaddr *)(&g_Ccl2ccSigAddr), sizeof(struct sockaddr_in)) == -1)
+    if (bind(s_CCsigSocket, (struct sockaddr *)(&g_Ccl2ccSigAddr), sizeof(struct sockaddr_in)) == -1)
     {
         printf("CC: Socket Binds Error : %s\n\a", strerror(errno));
         perror("socket>");
@@ -922,7 +946,6 @@ void IPC_Ccl2ccInit()
 
 void VoiceCc2cclPptOn()
 {
-
     unsigned char SndBuf[512];
     PTT_CMD *ptSndBuf = (PTT_CMD *)SndBuf;
     unsigned short SndLen;
@@ -932,12 +955,12 @@ void VoiceCc2cclPptOn()
     ptSndBuf->SharedHead.SigHead = 0xec13;
     ptSndBuf->PttStat = 0x06;              //PTT mingling 0X06
     ptSndBuf->SharedHead.SigType = 0x000a; //PTT_ON
-    ptSndBuf->CallingNum[0] = gCallingID[0];
-    ptSndBuf->CallingNum[1] = gCallingID[1];
-    ptSndBuf->CallingNum[2] = gCallingID[2];
-    ptSndBuf->CalledNum[0]  = gCalledID[0];
-    ptSndBuf->CalledNum[1]  = gCalledID[1];
-    ptSndBuf->CalledNum[2]  = gCalledID[2];
+    ptSndBuf->CallingNum[0] = s_CallingID[0];
+    ptSndBuf->CallingNum[1] = s_CallingID[1];
+    ptSndBuf->CallingNum[2] = s_CallingID[2];
+    ptSndBuf->CalledNum[0]  = s_CalledID[0];
+    ptSndBuf->CalledNum[1]  = s_CalledID[1];
+    ptSndBuf->CalledNum[2]  = s_CalledID[2];
     SndLen = sendto(s_tCenterSigSockfd, ptSndBuf, sizeof(PTT_CMD), 0, (struct sockaddr *)&s_tCenterSigAddr, sizeof(s_tCenterSigAddr));
     printf("PTT on sendlen =%d\n",SndLen);
 //  gettimeofday(&sigstart, &tz);
@@ -959,12 +982,12 @@ void VoiceCc2cclPptOff()
     ptSndBuf->SharedHead.SigHead = 0xec13;
     ptSndBuf->PttStat = 0x07;               //PTT mingling
     ptSndBuf->SharedHead.SigType = 0x000a;  //PTT_ON
-    ptSndBuf->CallingNum[0] = gCallingID[0];
-    ptSndBuf->CallingNum[1] = gCallingID[1];
-    ptSndBuf->CallingNum[2] = gCallingID[2];
-    ptSndBuf->CalledNum[0]  = gCalledID[0];
-    ptSndBuf->CalledNum[1]  = gCalledID[1];
-    ptSndBuf->CalledNum[2]  = gCalledID[2];
+    ptSndBuf->CallingNum[0] = s_CallingID[0];
+    ptSndBuf->CallingNum[1] = s_CallingID[1];
+    ptSndBuf->CallingNum[2] = s_CallingID[2];
+    ptSndBuf->CalledNum[0]  = s_CalledID[0];
+    ptSndBuf->CalledNum[1]  = s_CalledID[1];
+    ptSndBuf->CalledNum[2]  = s_CalledID[2];
     SndLen = sendto( s_tCenterSigSockfd,  ptSndBuf, sizeof(PTT_CMD), 0, (struct sockaddr *)&s_tCenterSigAddr, sizeof(s_tCenterSigAddr)); // @@数字什么意思
     printf("PTT OFF sendlen =%d\n",SndLen);
 //  gettimeofday(&sigstop,&tz);
@@ -1008,17 +1031,17 @@ void ODP_MsDisableIdt(void)         // 0
     CcSMessage.MsgData.sender_num[1] = 0x00;
     CcSMessage.MsgData.sender_num[2] = 0x01;
 
-    if (gTestOption == OPTION_PRESS)
+    if (s_TestOption == OPTION_PRESS)
     {
-        CcSMessage.MsgData.receiver_num[0] = gDstRcv[0];
-        CcSMessage.MsgData.receiver_num[1] = gDstRcv[1];
-        CcSMessage.MsgData.receiver_num[2] = gDstRcv[2];
+        CcSMessage.MsgData.receiver_num[0] = s_DstRcv[0];
+        CcSMessage.MsgData.receiver_num[1] = s_DstRcv[1];
+        CcSMessage.MsgData.receiver_num[2] = s_DstRcv[2];
     }
-    else if (gTestOption == OPTION_FEATURE)
+    else if (s_TestOption == OPTION_FEATURE)
     {
-        CcSMessage.MsgData.receiver_num[0] = gDstRcv[0];
-        CcSMessage.MsgData.receiver_num[1] = gDstRcv[1];
-        CcSMessage.MsgData.receiver_num[2] = gDstRcv[2];
+        CcSMessage.MsgData.receiver_num[0] = s_DstRcv[0];
+        CcSMessage.MsgData.receiver_num[1] = s_DstRcv[1];
+        CcSMessage.MsgData.receiver_num[2] = s_DstRcv[2];
     }
     else
     {
@@ -1063,17 +1086,17 @@ void ODP_MsEnableIdt(void)      // 1
     CcSMessage.MsgData.sender_num[1] = 0x00;
     CcSMessage.MsgData.sender_num[2] = 0x01;
 
-    if (gTestOption == OPTION_PRESS)
+    if (s_TestOption == OPTION_PRESS)
     {
-        CcSMessage.MsgData.receiver_num[0] = gDstRcv[0];
-        CcSMessage.MsgData.receiver_num[1] = gDstRcv[1];
-        CcSMessage.MsgData.receiver_num[2] = gDstRcv[2];
+        CcSMessage.MsgData.receiver_num[0] = s_DstRcv[0];
+        CcSMessage.MsgData.receiver_num[1] = s_DstRcv[1];
+        CcSMessage.MsgData.receiver_num[2] = s_DstRcv[2];
     }
-    else if (gTestOption == OPTION_FEATURE)
+    else if (s_TestOption == OPTION_FEATURE)
     {
-        CcSMessage.MsgData.receiver_num[0] = gDstRcv[0];
-        CcSMessage.MsgData.receiver_num[1] = gDstRcv[1];
-        CcSMessage.MsgData.receiver_num[2] = gDstRcv[2];
+        CcSMessage.MsgData.receiver_num[0] = s_DstRcv[0];
+        CcSMessage.MsgData.receiver_num[1] = s_DstRcv[1];
+        CcSMessage.MsgData.receiver_num[2] = s_DstRcv[2];
     }
     else
     {
@@ -1119,21 +1142,21 @@ void ODP_MsGpsReport(void)      // 2
     CcSMessage.MsgData.sender_num[1] = 0x00;
     CcSMessage.MsgData.sender_num[2] = 0x01;
 
-    if (gTestOption == OPTION_PRESS)
+    if (s_TestOption == OPTION_PRESS)
     {
 //        CcSMessage.MsgData.receiver_num[0] = 0x00;
 //        CcSMessage.MsgData.receiver_num[1] = 0x00;
 //        CcSMessage.MsgData.receiver_num[2] = 0x8f;
-        CcSMessage.MsgData.receiver_num[0] = gDstRcv[0];
-        CcSMessage.MsgData.receiver_num[1] = gDstRcv[1];
-        CcSMessage.MsgData.receiver_num[2] = gDstRcv[2];
+        CcSMessage.MsgData.receiver_num[0] = s_DstRcv[0];
+        CcSMessage.MsgData.receiver_num[1] = s_DstRcv[1];
+        CcSMessage.MsgData.receiver_num[2] = s_DstRcv[2];
 
     }
-    else if (gTestOption == OPTION_FEATURE)
+    else if (s_TestOption == OPTION_FEATURE)
     {
-        CcSMessage.MsgData.receiver_num[0] = gDstRcv[0];
-        CcSMessage.MsgData.receiver_num[1] = gDstRcv[1];
-        CcSMessage.MsgData.receiver_num[2] = gDstRcv[2];
+        CcSMessage.MsgData.receiver_num[0] = s_DstRcv[0];
+        CcSMessage.MsgData.receiver_num[1] = s_DstRcv[1];
+        CcSMessage.MsgData.receiver_num[2] = s_DstRcv[2];
 
 
     }
@@ -1144,9 +1167,9 @@ void ODP_MsGpsReport(void)      // 2
     }
 
     UINT8 data[4] = {0x0a, 0x00, 0x00, 0x8f};
-    data[1] = gDstRcv[0];
-    data[2] = gDstRcv[1];
-    data[3] = gDstRcv[2];
+    data[1] = s_DstRcv[0];
+    data[2] = s_DstRcv[1];
+    data[3] = s_DstRcv[2];
 
     
     memcpy(CcSMessage.MsgData.sms_data, data, 8);
@@ -1188,23 +1211,23 @@ void ODP_NasDisableIdt(void)        // 3
     CcSMessage.MsgData.valid_length = 0;
     CcSMessage.MsgData.sms_format = 0x01;
 //  CcSMessage.MsgData.sender_num[0] = SrcDev;
-    CcSMessage.MsgData.sender_num[0] = gSrcDev;
+    CcSMessage.MsgData.sender_num[0] = s_SrcDev;
     CcSMessage.MsgData.sender_num[1] = 0x00;
     CcSMessage.MsgData.sender_num[2] = 0x00;
 //  CcSMessage.MsgData.receiver_num[0] = DstDev;
-    CcSMessage.MsgData.receiver_num[0] = gDstDev;
+    CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     CcSMessage.MsgData.receiver_num[1] = 0x00;
     CcSMessage.MsgData.receiver_num[2] = 0x00;
 
-    if (gTestOption == OPTION_PRESS)
+    if (s_TestOption == OPTION_PRESS)
     {
-        CcSMessage.MsgData.sender_num[0] = gSrcDev;
-        CcSMessage.MsgData.receiver_num[0] = gDstDev;
+        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
+        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     }
-    else if (gTestOption == OPTION_FEATURE)
+    else if (s_TestOption == OPTION_FEATURE)
     {
-        CcSMessage.MsgData.sender_num[0] = gSrcDev;
-        CcSMessage.MsgData.receiver_num[0] = gDstDev;
+        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
+        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     }
     else
     {
@@ -1248,24 +1271,24 @@ static void ODP_NasEnableIdt(void)   // 4
     CcSMessage.MsgData.valid_length = 0;
     CcSMessage.MsgData.sms_format = 0x01;
 //    CcSMessage.MsgData.sender_num[0] = SrcDev;
-    CcSMessage.MsgData.sender_num[0] = gSrcDev;
+    CcSMessage.MsgData.sender_num[0] = s_SrcDev;
     CcSMessage.MsgData.sender_num[1] = 0x00;
     CcSMessage.MsgData.sender_num[2] = 0x00;
 //    CcSMessage.MsgData.receiver_num[0] = DstDev;
-    CcSMessage.MsgData.receiver_num[0] = gDstDev;
+    CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     CcSMessage.MsgData.receiver_num[1] = 0x00;
     CcSMessage.MsgData.receiver_num[2] = 0x00;
 
     // 区分压力还是功能测试
-    if (gTestOption == OPTION_PRESS)
+    if (s_TestOption == OPTION_PRESS)
     {
-        CcSMessage.MsgData.sender_num[0] = gSrcDev;
-        CcSMessage.MsgData.receiver_num[0] = gDstDev;
+        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
+        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     }
-    else if (gTestOption == OPTION_FEATURE)
+    else if (s_TestOption == OPTION_FEATURE)
     {
-        CcSMessage.MsgData.sender_num[0] = gSrcDev;
-        CcSMessage.MsgData.receiver_num[0] = gDstDev;
+        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
+        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     }
     else
     {
@@ -1310,24 +1333,24 @@ void ODP_NasGpsReport(void)   //5
     CcSMessage.MsgData.valid_length = 0;
     CcSMessage.MsgData.sms_format = 0x01;
 //    CcSMessage.MsgData.sender_num[0] = SrcDev;
-    CcSMessage.MsgData.sender_num[0] = gSrcDev;
+    CcSMessage.MsgData.sender_num[0] = s_SrcDev;
     CcSMessage.MsgData.sender_num[1] = 0x00;
     CcSMessage.MsgData.sender_num[2] = 0x00;
 //    CcSMessage.MsgData.receiver_num[0] = DstDev;
-    CcSMessage.MsgData.receiver_num[0] = gDstDev;
+    CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     CcSMessage.MsgData.receiver_num[1] = 0x00;
     CcSMessage.MsgData.receiver_num[2] = 0x00;
 
     // 区分压力还是功能测试
-    if (gTestOption == OPTION_PRESS)
+    if (s_TestOption == OPTION_PRESS)
     {
-        CcSMessage.MsgData.sender_num[0] = gSrcDev;
-        CcSMessage.MsgData.receiver_num[0] = gDstDev;
+        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
+        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     }
-    else if (gTestOption == OPTION_FEATURE)
+    else if (s_TestOption == OPTION_FEATURE)
     {
-        CcSMessage.MsgData.sender_num[0] = gSrcDev;
-        CcSMessage.MsgData.receiver_num[0] = gDstDev;
+        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
+        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     }
     else
     {
@@ -1371,24 +1394,24 @@ void ODP_NasStunIdt(void)       // 6
     CcSMessage.MsgData.valid_length = 0;
     CcSMessage.MsgData.sms_format = 0x01;
 //    CcSMessage.MsgData.sender_num[0] = SrcDev;
-    CcSMessage.MsgData.sender_num[0] = gSrcDev;
+    CcSMessage.MsgData.sender_num[0] = s_SrcDev;
     CcSMessage.MsgData.sender_num[1] = 0x00;
     CcSMessage.MsgData.sender_num[2] = 0x00;
 //    CcSMessage.MsgData.receiver_num[0] = DstDev;
-    CcSMessage.MsgData.receiver_num[0] = gDstDev;
+    CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     CcSMessage.MsgData.receiver_num[1] = 0x00;
     CcSMessage.MsgData.receiver_num[2] = 0x00;
 
     // 区分压力还是功能测试
-    if (gTestOption == OPTION_PRESS)
+    if (s_TestOption == OPTION_PRESS)
     {
-        CcSMessage.MsgData.sender_num[0] =   gSrcDev;
-        CcSMessage.MsgData.receiver_num[0] = gDstDev;
+        CcSMessage.MsgData.sender_num[0] =   s_SrcDev;
+        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     }
-    else if (gTestOption == OPTION_FEATURE)
+    else if (s_TestOption == OPTION_FEATURE)
     {
-        CcSMessage.MsgData.sender_num[0] = gSrcDev;
-        CcSMessage.MsgData.receiver_num[0] = gDstDev;
+        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
+        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     }
     else
     {
@@ -1434,24 +1457,24 @@ void ODP_NearNodeInfoQuery(void)        // 7
     CcSMessage.MsgData.valid_length = 0;
     CcSMessage.MsgData.sms_format = 0x01;
 //    CcSMessage.MsgData.sender_num[0] = SrcDev;
-    CcSMessage.MsgData.sender_num[0] = gSrcDev;
+    CcSMessage.MsgData.sender_num[0] = s_SrcDev;
     CcSMessage.MsgData.sender_num[1] = 0x00;
     CcSMessage.MsgData.sender_num[2] = 0x00;
 //    CcSMessage.MsgData.receiver_num[0] = DstDev;
-    CcSMessage.MsgData.receiver_num[0] = gDstDev;
+    CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     CcSMessage.MsgData.receiver_num[1] = 0x00;
     CcSMessage.MsgData.receiver_num[2] = 0x00;
 
     // 区分压力还是功能测试
-    if (gTestOption == OPTION_PRESS)
+    if (s_TestOption == OPTION_PRESS)
     {
-        CcSMessage.MsgData.sender_num[0] = gSrcDev;
-        CcSMessage.MsgData.receiver_num[0] = gDstDev;
+        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
+        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     }
-    else if (gTestOption == OPTION_FEATURE)
+    else if (s_TestOption == OPTION_FEATURE)
     {
-        CcSMessage.MsgData.sender_num[0] = gSrcDev;
-        CcSMessage.MsgData.receiver_num[0] = gDstDev;
+        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
+        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     }
     else
     {
@@ -1480,7 +1503,7 @@ void ODP_ShortMessage(void)     //8
     int i;
     int pDigit_len;
     char *pDigit= "0123456789ABCDEF";
-    UINT8 *pSms_data;
+    unsigned char *pSms_data;
     CC_CCL_DL_T CcSMessage;
     
     printf("short message download \n");
@@ -1501,19 +1524,16 @@ void ODP_ShortMessage(void)     //8
     CcSMessage.MsgData.source_stat = 0;
     CcSMessage.MsgData.sms_type = MESSAGE_GROUP_CALL;
 
-//    CcSMessage.MsgData.valid_length = 18;
-    CcSMessage.MsgData.valid_length = gMessage_len;
+    CcSMessage.MsgData.valid_length = s_Message_len*2;
     CcSMessage.MsgData.sms_format = 0x01;
     CcSMessage.MsgData.sender_num[0] = 0x00;
     CcSMessage.MsgData.sender_num[1] = 0x00;
     CcSMessage.MsgData.sender_num[2] = 0x01;
 
-    CcSMessage.MsgData.receiver_num[0] = gDstRcv[0];
-    CcSMessage.MsgData.receiver_num[1] = gDstRcv[1];
-    CcSMessage.MsgData.receiver_num[2] = gDstRcv[2];
-//    CcSMessage.MsgData.receiver_num[0] = 0x00;
-//    CcSMessage.MsgData.receiver_num[1] = 0x03;
-//    CcSMessage.MsgData.receiver_num[2] = 0xe8;
+    CcSMessage.MsgData.receiver_num[0] = s_GroupID[0];
+    CcSMessage.MsgData.receiver_num[1] = s_GroupID[1];
+    CcSMessage.MsgData.receiver_num[2] = s_GroupID[2];
+
     CcSMessage.MsgData.sms_data[0] = 'h';
     CcSMessage.MsgData.sms_data[1] = 0x00;
     CcSMessage.MsgData.sms_data[2] = 'y';
@@ -1533,41 +1553,33 @@ void ODP_ShortMessage(void)     //8
     CcSMessage.MsgData.sms_data[16] = '3';
     CcSMessage.MsgData.sms_data[17] = 0x00;
 
-    if (gTestOption == OPTION_PRESS)
+    if (s_TestOption == OPTION_PRESS)
     {
-//        CcSMessage.MsgData.receiver_num[0] = 0x00;
-//        CcSMessage.MsgData.receiver_num[1] = 0x00;
-//        CcSMessage.MsgData.receiver_num[2] = 0x8f;
-//        CcSMessage.MsgData.valid_length = 18;
-        CcSMessage.MsgData.receiver_num[0] = gDstRcv[0];
-        CcSMessage.MsgData.receiver_num[1] = gDstRcv[1];
-        CcSMessage.MsgData.receiver_num[2] = gDstRcv[2];
-        CcSMessage.MsgData.valid_length = gMessage_len;
-
-
-
+        CcSMessage.MsgData.receiver_num[0] = s_GroupID[0];
+        CcSMessage.MsgData.receiver_num[1] = s_GroupID[1];
+        CcSMessage.MsgData.receiver_num[2] = s_GroupID[2];
+        CcSMessage.MsgData.valid_length = s_Message_len*2;
     }
-    else if (gTestOption == OPTION_FEATURE)
+    else if (s_TestOption == OPTION_FEATURE)
     {
-        CcSMessage.MsgData.receiver_num[0] = gDstRcv[0];
-        CcSMessage.MsgData.receiver_num[1] = gDstRcv[1];
-        CcSMessage.MsgData.receiver_num[2] = gDstRcv[2];
-        CcSMessage.MsgData.valid_length = gMessage_len;
-
+        CcSMessage.MsgData.receiver_num[0] = s_GroupID[0];
+        CcSMessage.MsgData.receiver_num[1] = s_GroupID[1];
+        CcSMessage.MsgData.receiver_num[2] = s_GroupID[2];
+        CcSMessage.MsgData.valid_length = s_Message_len*2;
 
         pSms_data = CcSMessage.MsgData.sms_data;
-        memset(pSms_data, 0, gMessage_len*2);  //有效发送长度。UTF-16 占用两个字节
+        memset(pSms_data, 0, s_Message_len*2);  //有效发送长度。UTF-16 占用两个字节
         pDigit_len = strlen(pDigit);
-        printf("pDigit_len =%d, gMessage_len=%d\n", pDigit_len, gMessage_len);
+        printf("pDigit_len =%d, s_Message_len=%d\n", pDigit_len, s_Message_len);
 
-        for (i = 0; i < gMessage_len ; i++)
+        for (i = 0; i < s_Message_len ; i++)
         {
             pSms_data[i*2] = pDigit[i % pDigit_len];
         }
 
         pSms_data = &CcSMessage.MsgData.sms_data[0];
 
-        for (i = 0; i < gMessage_len*2; i++)
+        for (i = 0; i < s_Message_len*2; i++)
         {
             printf("(%d)=(%c)(%#04x)\n", i, pSms_data[i], pSms_data[i]);
         }
@@ -1581,11 +1593,15 @@ void ODP_ShortMessage(void)     //8
     sendto(SigSocket, &CcSMessage, sizeof(CC_CCL_DL_T), 0, (struct sockaddr *)(&CclSigAddr), UDPSize);
 }
 
-void Item_MSRemoteKillTest()              // 0
+
+
+
+
+void Item_MSRemoteKillTest(int item)              // 0
 {
     char name[50];
     unsigned int dst = 0;
-    unsigned char *pBuFF = (unsigned char *)&dst;
+    unsigned char *pBuff = (unsigned char *)&dst;
     snprintf(name, sizeof(name), "%s", __FUNCTION__);
     while (1)
     {
@@ -1599,26 +1615,32 @@ void Item_MSRemoteKillTest()              // 0
         printf("the dst ID is not in range\n\n");
     }
 
+	// dst 赋值不可删
     dst = U32Change2BigEndian(dst) >> 8;
-    gDstRcv[0] = pBuFF[0];
-    gDstRcv[1] = pBuFF[1];
-    gDstRcv[2] = pBuFF[2];
+
+#if 0
+    s_DstRcv[0] = pBuff[0];
+    s_DstRcv[1] = pBuff[1];
+    s_DstRcv[2] = pBuff[2];
     printf("\nPlease confirm your input\n");
-    printf("gDstRcv[0]=%d\t(%#04x)\n", gDstRcv[0], gDstRcv[0]);
-    printf("gDstRcv[1]=%d\t(%#04x)\n", gDstRcv[1], gDstRcv[1]);
-    printf("gDstRcv[2]=%d\t(%#04x)\n", gDstRcv[2], gDstRcv[2]);
+    printf("s_DstRcv[0]=%d\t(%#04x)\n", s_DstRcv[0], s_DstRcv[0]);
+    printf("s_DstRcv[1]=%d\t(%#04x)\n", s_DstRcv[1], s_DstRcv[1]);
+    printf("s_DstRcv[2]=%d\t(%#04x)\n", s_DstRcv[2], s_DstRcv[2]);
+#endif
+	
+	set_item_ID_input(item, pBuff, 0, 0);
     Pause();
-    ODP_MsDisableIdt();
+	atDataItemFun[item].pFunOdp();	// ODP_MsDisableIdt();
 }
 
 
 
-void Item_MsEnableTest()                   // 1
+void Item_MsEnableTest(int item)                   // 1
 {
 
     char name[50];
     unsigned int dst = 0;
-    unsigned char *pBuFF = (unsigned char *)&dst;
+    unsigned char *pBuff = (unsigned char *)&dst;
     snprintf(name, sizeof(name), "%s", __FUNCTION__);
     while (1)
     {
@@ -1633,126 +1655,152 @@ void Item_MsEnableTest()                   // 1
     }
 
     dst = U32Change2BigEndian(dst) >> 8;
-    gDstRcv[0] = pBuFF[0];
-    gDstRcv[1] = pBuFF[1];
-    gDstRcv[2] = pBuFF[2];
+#if 0
+    s_DstRcv[0] = pBuff[0];
+    s_DstRcv[1] = pBuff[1];
+    s_DstRcv[2] = pBuff[2];
     printf("\nPlease confirm your input\n");
-    printf("gDstRcv[0]=%d\t(%#04x)\n", gDstRcv[0], gDstRcv[0]);
-    printf("gDstRcv[1]=%d\t(%#04x)\n", gDstRcv[1], gDstRcv[1]);
-    printf("gDstRcv[2]=%d\t(%#04x)\n", gDstRcv[2], gDstRcv[2]);
+    printf("s_DstRcv[0]=%d\t(%#04x)\n", s_DstRcv[0], s_DstRcv[0]);
+    printf("s_DstRcv[1]=%d\t(%#04x)\n", s_DstRcv[1], s_DstRcv[1]);
+    printf("s_DstRcv[2]=%d\t(%#04x)\n", s_DstRcv[2], s_DstRcv[2]);
+#endif
+	
+	set_item_ID_input(item, pBuff, 0, 0);
     Pause();
-    ODP_MsEnableIdt();
+	atDataItemFun[item].pFunOdp();	// ODP_MsEnableIdt();
 }
 
 
 
 
-void Item_MsGpsReportTest()               // 2
+void Item_MsGpsReportTest(int item)               // 2
 {
     char name[50];
     unsigned int dst = 0;
-    unsigned char *pBuFF = (unsigned char *)&dst;
+    unsigned char *pBuff = (unsigned char *)&dst;
     snprintf(name, sizeof(name), "%s", __FUNCTION__);
     while (1)
     {
         printf("please input the dst ID 0~0xFFFFFF to test...\
             \n0~0xFFFFFF(0~16777215) mean maximum values of 3 bytes\n");
         dst = get_value_u32(name, "dst ID>", &dst);
-        if (dst >= 0  && dst <= 16777215)
+        if (dst >= 0 && dst <= 16777215)
         {
             break;
         }
         printf("the dst ID is not in range\n\n");
     }
-
+	
     dst = U32Change2BigEndian(dst) >> 8;
-    gDstRcv[0] = pBuFF[0];
-    gDstRcv[1] = pBuFF[1];
-    gDstRcv[2] = pBuFF[2];
+
+#if 0
+    s_DstRcv[0] = pBuff[0];
+    s_DstRcv[1] = pBuff[1];
+    s_DstRcv[2] = pBuff[2];
  
     printf("\nPlease confirm your input\n");
-    printf("gDstRcv[0]=%d\t(%#04x)\n", gDstRcv[0], gDstRcv[0]);
-    printf("gDstRcv[1]=%d\t(%#04x)\n", gDstRcv[1], gDstRcv[1]);
-    printf("gDstRcv[2]=%d\t(%#04x)\n", gDstRcv[2], gDstRcv[2]);
+    printf("s_DstRcv[0]=%d\t(%#04x)\n", s_DstRcv[0], s_DstRcv[0]);
+    printf("s_DstRcv[1]=%d\t(%#04x)\n", s_DstRcv[1], s_DstRcv[1]);
+    printf("s_DstRcv[2]=%d\t(%#04x)\n", s_DstRcv[2], s_DstRcv[2]);
+#endif
+	set_item_ID_input(item, pBuff, 0, 0);
     Pause();
-    ODP_MsGpsReport();
+	atDataItemFun[item].pFunOdp();	// ODP_MsGpsReport();
 }
 
 
 
-void Item_NasDisableTest()                 // 3
+void Item_NasDisableTest(int item)                 // 3
 {
     char name[50];
     char SrcDev, DstDev;
     snprintf(name, sizeof(name), "%s", __FUNCTION__);
     get_src_dst_id(name, &SrcDev, &DstDev);
-    gSrcDev = SrcDev;
-    gDstDev = DstDev;
+
+#if 0
+    s_SrcDev = SrcDev;
+    s_DstDev = DstDev;
     printf("\nPlease confirm your input\n");
     printf("you get the SrcDev ID(%d) and DstDev(%d) \n\n", SrcDev, DstDev);
+#endif
+	set_item_ID_input(item, NULL, SrcDev, DstDev);
     Pause();
-    ODP_NasDisableIdt();
+	atDataItemFun[item].pFunOdp();	// ODP_NasDisableIdt();
 }
 
 
-void Item_NasEnableTest()                  // 4
+void Item_NasEnableTest(int item)                  // 4
 {
     char name[50];
     char SrcDev, DstDev;
     snprintf(name, sizeof(name), "%s", __FUNCTION__);
     get_src_dst_id(name, &SrcDev, &DstDev);
-    gSrcDev = SrcDev;
-    gDstDev = DstDev;
+
+#if 0
+    s_SrcDev = SrcDev;
+    s_DstDev = DstDev;
     printf("\nPlease confirm your input\n");
     printf("you get the SrcDev ID(%d) and DstDev(%d) \n\n", SrcDev, DstDev);
+#endif
+	set_item_ID_input(item, NULL, SrcDev, DstDev);
     Pause();
-    ODP_NasEnableIdt();
+	atDataItemFun[item].pFunOdp();	// ODP_NasEnableIdt();
 }
 
 
-void Item_NasGpsReportTest()              // 5
+void Item_NasGpsReportTest(int item)              // 5
 {
     char name[50];
     char SrcDev, DstDev;
     snprintf(name, sizeof(name), "%s", __FUNCTION__);
     get_src_dst_id(name, &SrcDev, &DstDev);
-    gSrcDev = SrcDev;
-    gDstDev = DstDev;
+#if 0
+    s_SrcDev = SrcDev;
+    s_DstDev = DstDev;
     printf("\nPlease confirm your input\n");
     printf("you get the SrcDev ID(%d) and DstDev(%d) \n\n", SrcDev, DstDev);
+#endif
+	set_item_ID_input(item, NULL, SrcDev, DstDev);
     Pause();
-    ODP_NasGpsReport();
+	atDataItemFun[item].pFunOdp();	// ODP_NasGpsReport();
+    
 }
 
-void Item_NasStunTest()                    // 6
+void Item_NasStunTest(int item)                    // 6
 {
     char name[50];
     char SrcDev, DstDev;
     snprintf(name, sizeof(name), "%s", __FUNCTION__);
     get_src_dst_id(name, &SrcDev, &DstDev);
-    gSrcDev = SrcDev;
-    gDstDev = DstDev;
+#if 0
+    s_SrcDev = SrcDev;
+    s_DstDev = DstDev;
     printf("\nPlease confirm your input\n");
     printf("you get the SrcDev ID(%d) and DstDev(%d) \n\n", SrcDev, DstDev);
+#endif
+	set_item_ID_input(item, NULL, SrcDev, DstDev);
     Pause();
-    ODP_NasStunIdt();
+	atDataItemFun[item].pFunOdp();	// ODP_NasStunIdt();
 }
 
 
 
 
-void Item_NeighborQueryTest()              // 7
+void Item_NeighborQueryTest(int item)              // 7
 {
     char name[50];
     char SrcDev, DstDev;
     snprintf(name, sizeof(name), "%s", __FUNCTION__);
     get_src_dst_id(name, &SrcDev, &DstDev);
-    gSrcDev = SrcDev;
-    gDstDev = DstDev;
+#if 0
+    s_SrcDev = SrcDev;
+    s_DstDev = DstDev;
     printf("\nPlease confirm your input\n");
     printf("you get the SrcDev ID(%d) and DstDev(%d) \n\n", SrcDev, DstDev);
+#endif
+	set_item_ID_input(item, NULL, SrcDev, DstDev);
     Pause();
-    ODP_NearNodeInfoQuery();
+	atDataItemFun[item].pFunOdp();	// ODP_NearNodeInfoQuery();
 }
 
 
@@ -1761,13 +1809,14 @@ void Item_NeighborQueryTest()              // 7
 
 
 
-void Item_ShortMessageTest()      // 8
+
+void Item_ShortMessageTest(int item)      // 8
 {
     // 组ID
     char buff[256];
     unsigned int dst = 0;
     unsigned int len = 0;
-    unsigned char *pBuFF = (unsigned char *)&dst;
+    unsigned char *pBuff = (unsigned char *)&dst;
     snprintf(buff, sizeof(buff), "%s", __FUNCTION__);
     while (1)
     {
@@ -1782,15 +1831,14 @@ void Item_ShortMessageTest()      // 8
         printf("the msg group_ID is not in range\n\n");
     }
     dst = U32Change2BigEndian(dst) >> 8;
-    
-    gDstRcv[0] = pBuFF[0];
-    gDstRcv[1] = pBuFF[1];
-    gDstRcv[2] = pBuFF[2];
-
+#if 0
+    s_GroupID[0] = pBuff[0];
+    s_GroupID[1] = pBuff[1];
+    s_GroupID[2] = pBuff[2];
+#endif
     // 包长度
     while (1)
     {
-
         printf("please input the packet len 1~100 to test...\n");
         len = get_value_u32(buff, "packet len>", &dst);
         if (len > 0  && len <= 100)
@@ -1800,15 +1848,52 @@ void Item_ShortMessageTest()      // 8
         printf("the the msg len is not in range\n\n");
     }
 
-    gMessage_len = len;
-    printf("\nPlease confirm your input\n");
-    printf("gDstRcv[0]=%d\t(%#04x)\n", gDstRcv[0], gDstRcv[0]);
-    printf("gDstRcv[1]=%d\t(%#04x)\n", gDstRcv[1], gDstRcv[1]);
-    printf("gDstRcv[2]=%d\t(%#04x)\n", gDstRcv[2], gDstRcv[2]);
-    printf("gMessage_len=%d\n",gMessage_len);
+	set_item_ID_input(item, pBuff, 0, 0);
+    s_Message_len = len;
+    printf("s_Message_len=%d\n",s_Message_len);
 //    SetSmsData(); 暂时不用
     Pause();
-    ODP_ShortMessage();
+	atDataItemFun[item].pFunOdp();	// ODP_ShortMessage();
+}
+
+
+void set_item_ID_input(int item, unsigned char *pBuff, char SrcDev, char DstDev)
+{
+    const char *token;
+    token = atDataItemFun[item].token;
+    printf("\nPlease confirm your input\n");
+    if ((strncmp(token, "MS", strlen(token)) == 0) && (pBuff != NULL)) 
+    {
+        s_DstRcv[0] = pBuff[0];
+        s_DstRcv[1] = pBuff[1];
+        s_DstRcv[2] = pBuff[2];
+        // item-0   item-1  item-2
+        printf("s_DstRcv[0]=%d\t(%#04x)\n", s_DstRcv[0], s_DstRcv[0]);
+        printf("s_DstRcv[1]=%d\t(%#04x)\n", s_DstRcv[1], s_DstRcv[1]);
+        printf("s_DstRcv[2]=%d\t(%#04x)\n", s_DstRcv[2], s_DstRcv[2]);  
+    }
+    else if (strncmp(token, "Nas", strlen(token)) == 0)
+    {
+        s_SrcDev = SrcDev;
+        s_DstDev = DstDev;
+        // item-3, item-4, item-5, item-6, item-7
+        printf("you get the SrcID=%d(%#04X) and DstId=%d(%#04X)\n\n", SrcDev, SrcDev, DstDev, DstDev);
+    }
+    else if (strncmp(token, "Group", strlen(token)) == 0)
+    {
+        s_GroupID[0] = pBuff[0];
+        s_GroupID[1] = pBuff[1];
+        s_GroupID[2] = pBuff[2];
+        // item-8
+        printf("s_GroupID[0]=%d\t(%#04x)\n", s_GroupID[0], s_GroupID[0]);
+        printf("s_GroupID[1]=%d\t(%#04x)\n", s_GroupID[1], s_GroupID[1]);
+        printf("s_GroupID[2]=%d\t(%#04x)\n", s_GroupID[2], s_GroupID[2]);
+    }
+    else
+    {
+        printf("[%s:%d]: toake err\n", __FUNCTION__, __LINE__);
+        exit(0);
+    }
 }
 
 
@@ -1920,14 +2005,9 @@ void PressVoiceCc2cclSend()
 
 
 
-
-
-
-
 void *PressODPVoiceTask(void * p)
 {
-
-    printf("\n\n[%s:%d]\n\n", __FUNCTION__, __LINE__);
+    printf("\n Start Voice Press \n\n");
     while (1)
     {
         VoiceCc2cclPptOn();
@@ -1944,18 +2024,27 @@ void SetVoiceID()
 {
     unsigned int dst;
     char name[200];
-    snprintf(name, sizeof(name), "[%s], %s", __FUNCTION__, "please input the ID (0~16777215) to test...\n");
+	printf("\nInit Voice outband Calling_ID & Called_ID\n");
+    snprintf(name, sizeof(name), "Fun:[%s], %s", __FUNCTION__, "input the [Calling] ID (0~16777215) to test, CallingID=any key\n");
     dst = get_dst_U32(name, "Entry CallingID>", 0, 16777215);
     dst = U32Change2BigEndian(dst) >> 8;
-    gCallingID[0] = ((unsigned char *)&dst)[0];
-    gCallingID[1] = ((unsigned char *)&dst)[1];
-    gCallingID[2] = ((unsigned char *)&dst)[2];
+    s_CallingID[0] = ((unsigned char *)&dst)[0];
+    s_CallingID[1] = ((unsigned char *)&dst)[1];
+    s_CallingID[2] = ((unsigned char *)&dst)[2];
+    snprintf(name, sizeof(name), "Fun:[%s], %s", __FUNCTION__, "input the [Called] ID (0~16777215) to test, CalledID=GroupID\n");
     dst = get_dst_U32(name, "Entry CalledID>", 0, 16777215);
     dst = U32Change2BigEndian(dst) >> 8;
-    gCalledID[0] = ((unsigned char *)&dst)[0];
-    gCalledID[1] = ((unsigned char *)&dst)[1];
-    gCalledID[2] = ((unsigned char *)&dst)[2];
-
+    s_CalledID[0] = ((unsigned char *)&dst)[0];
+    s_CalledID[1] = ((unsigned char *)&dst)[1];
+    s_CalledID[2] = ((unsigned char *)&dst)[2];
+	printf("\nPlease confirm your input\n");
+	printf("s_CallingID[0]=%-8d(%#04x)\n", s_CallingID[0], s_CallingID[0]);
+	printf("s_CallingID[1]=%-8d(%#04x)\n", s_CallingID[1], s_CallingID[1]);
+	printf("s_CallingID[2]=%-8d(%#04x)\n", s_CallingID[2], s_CallingID[2]);
+	printf("s_CalledID[0]=%-8d(%#04x)\n",  s_CallingID[0], s_CalledID[0]);
+	printf("s_CalledID[1]=%-8d(%#04x)\n",  s_CallingID[1], s_CalledID[1]);
+	printf("s_CalledID[2]=%-8d(%#04x)\n",  s_CallingID[2], s_CalledID[2]);
+	Pause();
 }
 
 
@@ -1964,17 +2053,22 @@ void SetVoiceID()
 void SetSrcDstID()
 {
 	char name[50];
+	printf("\nInit NAS SrcID & DstID \n");
 	snprintf(name, sizeof(name), "%s", __FUNCTION__);
-	get_src_dst_id(name, &gSrcDev, &gDstDev);
-//    printf("gSrcDev=%d\t(%#04x)\n", gSrcDev, gSrcDev);
-//    printf("gDstDev=%d\t(%#04x)\n", gDstDev, gDstDev);
+	get_src_dst_id(name, &s_SrcDev, &s_DstDev);
+	printf("\nPlease confirm your input\n");
+	printf("s_SrcDev=%d\t(%#04x)\n", s_SrcDev, s_SrcDev);
+	printf("s_DstDev=%d\t(%#04x)\n", s_DstDev, s_DstDev);
+	Pause();
 }
+
+
 
 unsigned int get_dst_U32(const char *name, const char *prmpt, int min, int max)
 {
     char buff[11];          // 存放输入字符
     unsigned int dst;
-    printf("%s\n\n", name);
+	printf("%s", name);
 
     while (1)
     {
@@ -2020,62 +2114,35 @@ int get_Packet_len(const char *name, const char *prmpt)
 
 
 
-int get_group_id(const char *name, const char *prmpt)
-{
-    char buff[11];          // 存放输入字符
-    unsigned int dst;
-    printf("%s\n\n", name);
-    while (1)
-    {
-        if (digit_get(prmpt, buff, sizeof(buff), (int *)&dst) == GET_SUCCEED)
-        {
-            if (dst >= 0  &&  dst <= 16777215)
-            {
-                printf("\nYou get %d(%#010x)\n\n", dst, dst);
-                break;
-            }
-            printf("\nthe id is not in range, try again!!! \n\n");
-            
-        }
-    }
-
-    dst = U32Change2BigEndian(dst) >> 8;
-    gDstRcv[0] = ((unsigned char *)&dst)[0];
-    gDstRcv[1] = ((unsigned char *)&dst)[1];
-    gDstRcv[2] = ((unsigned char *)&dst)[2];
-    printf("\nPlease confirm your input\n");
-    printf("gDstRcv[0]=%d\t(%#04x)\n", gDstRcv[0], gDstRcv[0]);
-    printf("gDstRcv[1]=%d\t(%#04x)\n", gDstRcv[1], gDstRcv[1]);
-    printf("gDstRcv[2]=%d\t(%#04x)\n", gDstRcv[2], gDstRcv[2]);
-    Pause();
-    return dst;
-}
-
 
 void SetGroupID()
 {
     unsigned int dst;
 	char name[200];
-	snprintf(name, sizeof(name), "[%s], %s", __FUNCTION__, "please input the ID (0~16777215) to test...\n");
-//    get_group_id(name, "Entry ID");
+	printf("\nInit SMS outband Group ID\n");
+	snprintf(name, sizeof(name), "Fun:[%s], %s", __FUNCTION__, "Input the [Group] ID (0~16777215) to test...\n");
     dst = get_dst_U32(name, "Entry Group ID>", 0, 16777215);
     dst = U32Change2BigEndian(dst) >> 8;
-    gDstRcv[0] = ((unsigned char *)&dst)[0];
-    gDstRcv[1] = ((unsigned char *)&dst)[1];
-    gDstRcv[2] = ((unsigned char *)&dst)[2];
+    s_GroupID[0] = ((unsigned char *)&dst)[0];
+    s_GroupID[1] = ((unsigned char *)&dst)[1];
+    s_GroupID[2] = ((unsigned char *)&dst)[2];
     printf("\nPlease confirm your input\n");
-    printf("gDstRcv[0]=%d\t(%#04x)\n", gDstRcv[0], gDstRcv[0]);
-    printf("gDstRcv[1]=%d\t(%#04x)\n", gDstRcv[1], gDstRcv[1]);
-    printf("gDstRcv[2]=%d\t(%#04x)\n", gDstRcv[2], gDstRcv[2]);
+    printf("s_GroupID[0]=%d\t(%#04x)\n", s_GroupID[0], s_GroupID[0]);
+    printf("s_GroupID[1]=%d\t(%#04x)\n", s_GroupID[1], s_GroupID[1]);
+    printf("s_GroupID[2]=%d\t(%#04x)\n", s_GroupID[2], s_GroupID[2]);
+	Pause();
 }
+
 
 void SetMsgLen()
 {    
-//  unsigned int dst;
 	char name[200];
-	snprintf(name, sizeof(name), "[%s], %s", __FUNCTION__, "please input the Len (0~100) to test...\n");
-//    get_Packet_len(name, "Entry len");
-    gMessage_len = get_dst_U32(name, "Entry ID", 0, 100);
+	printf("\nInit SMS len\n");
+	snprintf(name, sizeof(name), "[%s], %s", __FUNCTION__, "please input [SMS len] (0~100) to test...\n");
+    s_Message_len = get_dst_U32(name, "Entry len", 0, 100);
+	printf("\nPlease confirm your input\n");
+	printf("s_Message_len=%d\t(%#04x)\n", s_Message_len, s_Message_len);
+	Pause();
 }
     
 
@@ -2089,7 +2156,6 @@ void *PressODPDataTask(void * p)
     while (1)
     {
         item = GetRandDigit() % ITEM_MAX;
-        printf("\n@@@@@@@@@@@@@@item=%d\n\n", item);
         sleep(1);
         for (index = 0; atDataItemFun[index].item != ITEM_MAX; index++)
         {
@@ -2114,8 +2180,7 @@ void PressVoiceTaskCreate()
     status = pthread_create(&ODP_VoicePid, NULL, PressODPVoiceTask, NULL);
     if (status != 0)
     {
-        printf("\nerr: create ODP press voice pthread\n");
-        perror("pthread_create>");
+        perror("Press Voice pthread_create>");
         exit(EXIT_FAILURE);
     }
     pthread_detach(ODP_VoicePid);
@@ -2126,12 +2191,11 @@ void PressVoiceTaskCreate()
 void PressDataTaskCreate()
 {
     int status;
-    printf("\n\n[%s:%d]\n\n", __FUNCTION__, __LINE__);
+    printf("\n Start Data Press \n\n");
     status = pthread_create(&ODP_DataPid, NULL, PressODPDataTask, NULL);
     if (status != 0)
     {
-        printf("\nerr: create ODP press data pthread\n");
-        perror("pthread_create>");
+        perror("Press Data pthread_create>");
         exit(EXIT_FAILURE);
     }
     pthread_detach(ODP_DataPid);
@@ -2158,7 +2222,7 @@ int VoiceCc2cclFormatGet()
         format = get_value_u32(name, "Entry Format>", &format);
         if ((format != AMBE_FORMAT) && (format != NVOC_FORMAT))
         {
-            printf("\nThere is no this option, try again ...\n");
+            printf("\nThere is no this option, try again\n");
             Pause();
             continue;
         }
@@ -2180,7 +2244,7 @@ int VoiceCc2cclLenGet()
         printf("\n\n2) Input the packet len, range: (%d ~ %d)*27bytes\n", POCKET_BYTE_MIN, POCKET_BYTE_MAX);
         snprintf(name, sizeof(name), "%s", __FUNCTION__);
         len = get_value_u32(name, "Entry len>", &len);
-        if ((len >= POCKET_BYTE_MIN) && (len < POCKET_BYTE_MAX))
+        if ((len >= POCKET_BYTE_MIN) && (len <= POCKET_BYTE_MAX))
         {
             return len;
         }
@@ -2358,20 +2422,19 @@ void DataCc2CclIStart(int item)
     {
         if (item == atDataItemFun[index].item)
         {
-            (atDataItemFun[index].pFunItem)();
+            (atDataItemFun[index].pFunItem)(item);
             break;
         }
     }
-    exit(EXIT_FAILURE);
 }
 
 
 
 
-// 
+ 
 int TestDataCc2ccl()
 {
-    int item;
+	int item;
     item = DataCc2CclItemGet();
     DataCc2CclIStart(item);
     return 0;
@@ -2557,15 +2620,13 @@ void TestVoiceDll2ccl()
 
 /*
  * 压力测试
- *
  */
 void TestPress()
 {
-
-    SetVoiceID();       // 手动设置源ID，目的ID    
-    SetGroupID();       // 设置组ID
-    SetSrcDstID();      // 源ID&目的ID
-    SetMsgLen();        // 设置短信的长度
+    SetVoiceID();		// 手动设置源ID，目的ID    
+    SetGroupID();   	// 设置组ID
+    SetSrcDstID();  	// 源ID&目的ID
+    SetMsgLen();    	// 设置短信的长度
     PressVoiceTaskCreate();
     PressDataTaskCreate();
 }
@@ -2586,23 +2647,19 @@ void *TestDataCheckTask(void * p)
     unsigned char RecvBuf[1024];
     unsigned char DataExch[3];
     unsigned char ExchTmp;
-
     PTT_CMD_S PttCmd;
     SMS_INFO_S SmsInfo;
     unsigned int nSenderNum = 0, nRecvNum = 0;
-
-
-    
-    printf("\n\n[%s:%d]\n\n", __FUNCTION__, __LINE__);
     IPC_Ccl2ccInit();  // Ccl2cc 套接字进程通信初始化
     bzero(&in_addr, sizeof(struct sockaddr_in));
+
     while (1)
     {
         FD_ZERO(&Fdsr);
-        FD_SET(g_CCsigSocket, &Fdsr);
+        FD_SET(s_CCsigSocket, &Fdsr);
         tv.tv_sec = 5;
         tv.tv_usec = 0;
-        ret = select(g_CCsigSocket + 1, &Fdsr, NULL, NULL, &tv);
+        ret = select(s_CCsigSocket + 1, &Fdsr, NULL, NULL, &tv);
         if (ret < 0)
         {
             printf("ipc ret < 0\n");
@@ -2611,31 +2668,25 @@ void *TestDataCheckTask(void * p)
         }
         else if (ret == 0)
         {
-            //printf("Wireless_Bridge: Wireless ret = 0\n");
-            printf("\n[%s:%d] select ret=0\n", __FUNCTION__, __LINE__);
             continue;
         }
 
-        if (FD_ISSET(g_CCsigSocket, &Fdsr))
+        if (FD_ISSET(s_CCsigSocket, &Fdsr))
         {
-            count = recvfrom(g_CCsigSocket, RecvBuf, sizeof(RecvBuf), 0, (struct sockaddr *)(&in_addr), &SinSize);
+            count = recvfrom(s_CCsigSocket, RecvBuf, sizeof(RecvBuf), 0, (struct sockaddr *)(&in_addr), &SinSize);
             if (count < 0)
             {
-                //printf("inf ipc count < 0\n");
+//				printf("\n\n[%s:%d]\n\n", __FUNCTION__, __LINE__);
                 continue;
             }
         }
 
-        // 解析缓存
-
-
-
+// 		解析缓存
         pHead = (CENTER_CMD_SHARE_HEAD *)RecvBuf;
-
-        printf("pHead->SigHead=%#010x",     pHead->SigHead);
-        printf("pHead->SigType=%#010x",     pHead->SigType);
-        printf("pHead->Datalength=%#010x",  pHead->Datalength);
-        printf("pHead->SourceID=%#010x",    pHead->SourceID);
+        printf("pHead->SigHead=%#06x\n",     pHead->SigHead);
+        printf("pHead->SigType=%#06x\n",     pHead->SigType);
+        printf("pHead->Datalength=%#06x\n",  pHead->Datalength);
+        printf("pHead->SourceID=%#06x\n",    pHead->SourceID);
 
 
         if ((RecvBuf[0] == 0x13) && (RecvBuf[1] == 0xec))       // 信令头解析
@@ -2666,10 +2717,11 @@ void *TestDataCheckTask(void * p)
             if ((RecvBuf[2] == 0x0e) && (RecvBuf[3] == 0x00))   //SMS_INFO
             {
 
-                printf("\n\n[%s:%d]\n\n", __FUNCTION__, __LINE__);
+                printf("\n\n@@[%s:%d]\n\n", __FUNCTION__, __LINE__);
                 memcpy(&SmsInfo, RecvBuf, sizeof(SMS_INFO_S));
                 if (SmsInfo.SmsType == MESSAGE_GROUP_CALL)
                 {
+                    printf("\n\n@@[%s:%d]\n\n", __FUNCTION__, __LINE__);
                     memcpy(DataExch, SmsInfo.SenderNum, 3);
 //                    memset(SmsInfo.SenderNum, 0x00, 30);
                     // 颠倒顺序
@@ -2677,7 +2729,7 @@ void *TestDataCheckTask(void * p)
                     DataExch[0] = DataExch[2];
                     DataExch[2] = ExchTmp;
                     memcpy(&nSenderNum, DataExch, 3);
-                    sprintf(SmsInfo.SenderNum, "%d", nSenderNum);
+                    sprintf((char *)SmsInfo.SenderNum, "%d", nSenderNum);
 
                     memcpy(DataExch, SmsInfo.ReceiverNum, 3);                    
 //                    memset(SmsInfo.ReceiverNum, 0x00, 30);
@@ -2685,7 +2737,7 @@ void *TestDataCheckTask(void * p)
                     DataExch[0] = DataExch[2];
                     DataExch[2] = ExchTmp;
                     memcpy(&nRecvNum, DataExch, 3);
-                    sprintf(SmsInfo.ReceiverNum, "%d", nRecvNum);
+                    sprintf((char *)SmsInfo.ReceiverNum, "%d", nRecvNum);
                     // 打印终端 发射和接收端
                     printf("Sender[0]=%d\t(%#04x)\n",     SmsInfo.SenderNum[0], SmsInfo.SenderNum[0]);
                     printf("Sender[1]=%d\t(%#04x)\n",     SmsInfo.SenderNum[1], SmsInfo.SenderNum[1]);
@@ -2704,28 +2756,34 @@ void *TestDataCheckTask(void * p)
                 }
                 else if ((SmsInfo.SmsType == GPS_REPORT_MS_ACK) || (SmsInfo.SmsType == GPS_REPORT_NAS_ACK))
                 {
+					printf("\n\n@@[%s:%d]\n\n", __FUNCTION__, __LINE__);
                     if (SmsInfo.SmsType == GPS_REPORT_NAS_ACK)
                     {
+						printf("\n\nNAS@@[%s:%d]\n\n", __FUNCTION__, __LINE__);
                         memcpy(&nSenderNum, SmsInfo.SenderNum, 1);
 //                        memset(SmsInfo.SenderNum, 0x00, 30);
-                        sprintf(SmsInfo.SenderNum, "%d", nSenderNum);
+                        sprintf((char *)SmsInfo.SenderNum, "%d", nSenderNum);
 
                         memcpy(&nRecvNum, SmsInfo.ReceiverNum, 1);
 //                        memset(SmsInfo.ReceiverNum, 0x00, 30);
-                        sprintf(SmsInfo.ReceiverNum, "%d", nRecvNum);
+                        sprintf((char *)SmsInfo.ReceiverNum, "%d", nRecvNum);
                         printf("Sender[0]=%d\t(%#04x)\n",     SmsInfo.SenderNum[0], SmsInfo.SenderNum[0]);                       
                         printf("Receiver[0]=%d\t(%#04x)\n",   SmsInfo.ReceiverNum[0], SmsInfo.ReceiverNum[0]);
 
                     }
+					printf("\n\n@@[%s:%d]\n\n", __FUNCTION__, __LINE__);
                     if (SmsInfo.SmsType == GPS_REPORT_MS_ACK)
                     {
+						printf("\n\nMS@@[%s:%d]\n\n", __FUNCTION__, __LINE__);
                         memcpy(DataExch, SmsInfo.SenderNum, 3);
                         memset(SmsInfo.SenderNum, 0x00, 30);
                         ExchTmp = DataExch[0];
                         DataExch[0] = DataExch[2];
                         DataExch[2] = ExchTmp;
                         memcpy(&nSenderNum, DataExch, 3);
-                        sprintf(SmsInfo.SenderNum, "%d", nSenderNum);
+//						printf("\n\nMS@@[%s:%d]nSenderNum=%d(%#010x)\n\n", __FUNCTION__, __LINE__, nSenderNum, nSenderNum);
+                        sprintf((char *)SmsInfo.SenderNum, "%d", nSenderNum);
+						printf("\n\nMS@@[%s:%d]SmsInfo.SenderNum=%s\n\n", __FUNCTION__, __LINE__, SmsInfo.SenderNum);
 
                         memcpy(DataExch, SmsInfo.ReceiverNum, 3);
                         memset(SmsInfo.ReceiverNum, 0x00, 30);
@@ -2733,27 +2791,27 @@ void *TestDataCheckTask(void * p)
                         DataExch[0] = DataExch[2];
                         DataExch[2] = ExchTmp;
                         memcpy(&nRecvNum, DataExch, 3);
-                        sprintf(SmsInfo.ReceiverNum, "%d", nRecvNum);
+//						printf("\n\nMS@@[%s:%d]nRecvNum=%d(%#010x)\n\n", __FUNCTION__, __LINE__, nRecvNum, nRecvNum);
+                        sprintf((char *)SmsInfo.ReceiverNum, "%d", nRecvNum);
+						printf("\n\nMS@@[%s:%d]nRecvNum=%s\n\n", __FUNCTION__, __LINE__, SmsInfo.ReceiverNum);
                         // 打印终端 发射和接收端
-                        printf("Sender[0]=%d\t(%#04x)\n",     SmsInfo.SenderNum[0], SmsInfo.SenderNum[0]);
-                        printf("Sender[1]=%d\t(%#04x)\n",     SmsInfo.SenderNum[1], SmsInfo.SenderNum[1]);
-                        printf("Sender[2]=%d\t(%#04x)\n\n",   SmsInfo.SenderNum[2], SmsInfo.SenderNum[2]);
-                        printf("Receiver[0]=%d\t(%#04x)\n",   SmsInfo.ReceiverNum[0], SmsInfo.ReceiverNum[0]);
-                        printf("Receiver[1]=%d\t(%#04x)\n",   SmsInfo.ReceiverNum[1], SmsInfo.ReceiverNum[1]);
-                        printf("Receiver[2]=%d\t(%#04x)\n",   SmsInfo.ReceiverNum[2], SmsInfo.ReceiverNum[2]);
+//                        printf("Sender[0]=%d\t(%#04x)\n",     SmsInfo.SenderNum[0], SmsInfo.SenderNum[0]);
+//                        printf("Sender[1]=%d\t(%#04x)\n",     SmsInfo.SenderNum[1], SmsInfo.SenderNum[1]);
+//                        printf("Sender[2]=%d\t(%#04x)\n\n",   SmsInfo.SenderNum[2], SmsInfo.SenderNum[2]);
+//                        printf("Receiver[0]=%d\t(%#04x)\n",   SmsInfo.ReceiverNum[0], SmsInfo.ReceiverNum[0]);
+//                        printf("Receiver[1]=%d\t(%#04x)\n",   SmsInfo.ReceiverNum[1], SmsInfo.ReceiverNum[1]);
+//                        printf("Receiver[2]=%d\t(%#04x)\n",   SmsInfo.ReceiverNum[2], SmsInfo.ReceiverNum[2]);
 
                     }
 
                     // 打印长度
                     printf("ValidLength=(%d)\n", SmsInfo.ValidLength);
-
+					printf("SmsData:\n");
                     for (i = 0; i < SmsInfo.ValidLength; i++)
                     {
-                        printf("%c ", SmsInfo.SmsData[i]);
+						printf("\t%c(%d-%#04x)\n", SmsInfo.SmsData[i], SmsInfo.SmsData[i], SmsInfo.SmsData[i]);
                     }
                     printf("\n\n");                    
-
-
 
 //                  SendMainCtrlGPSInfo(&SmsInfo);
 //                  SendLogInfo(DEBUG, "Wireless_Bridge: Recv GPS_Info From Wireless\n");
@@ -2774,7 +2832,6 @@ void *TestDataCheckTask(void * p)
 void TestDataCheckTaskCreate()
 {
     int status;
-    printf("\n\n[%s:%d]\n\n", __FUNCTION__, __LINE__);
     status = pthread_create(&ODP_DataRcvPid, NULL, TestDataCheckTask, NULL);
     if (status != 0)
     {
@@ -2782,7 +2839,7 @@ void TestDataCheckTaskCreate()
         perror("pthread_create>");
         exit(EXIT_FAILURE);
     }
-    pthread_detach(ODP_DataPid);
+    pthread_detach(ODP_DataRcvPid);
 }
 
 
@@ -2794,7 +2851,7 @@ int TestOption(int argc, char *argv[])
 {
     int opt;
     const char *optstring = "vduphVDUPH";
-    gTestOption = OPTION_FEATURE;       // 压力OR功能测试选项
+    s_TestOption = OPTION_FEATURE;       // 压力OR功能测试选项
 
     while ((opt = getopt(argc, argv, optstring)) != -1)
     {
@@ -2835,7 +2892,7 @@ int TestOption(int argc, char *argv[])
             case 'P':
             {
                 // 压力测试
-                gTestOption = OPTION_PRESS;
+                s_TestOption = OPTION_PRESS;
                 TestPress();
                 break;
             }
@@ -2873,7 +2930,7 @@ void TestInit()
 
 void CompileTime()
 {
-	//printf("\nCompile Time: [%s:%s]\n\n\n",  __DATE__, __TIME__);	
+	printf("Compile Time: [%s - %s]\n\n\n",  __DATE__, __TIME__);	
 }
 
 
