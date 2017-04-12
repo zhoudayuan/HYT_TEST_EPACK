@@ -63,7 +63,9 @@ delay(35);  ÑÓÊ±¶àÉÙºÏÊÊ
 #define MSG_TOO_LONG_ERR            -1
 #define MSG_NO_INPUT_ERR            -2
 
-
+#define  MS_ID_SIZE         3
+#define  NAS_ID_SIZE        1
+#define  GROUP_ID_SIZE      MS_ID_SIZE
 
 /**
  * @enum DLL_INF_MSG_TYPE_E
@@ -283,23 +285,21 @@ typedef struct _DLL_CCL_UL_T
 
 
 typedef void (*pITEM_TEST_F)();
-
-
 typedef void (*pITEM_TEST_INIT)(int item);
 typedef struct _DATA_ITEM_FUN_T
 {
     DATA_TEST_ITEM item;
     pITEM_TEST_INIT pFunItem;
     pITEM_TEST_F pFunOdp;
-	const char *token;
+    const char *token;
+    const char *ItemName;
 } DATA_ITEM_FUN_T;
 
 
 
 //---±äÁ¿---
-static UINT8 s_SmsBuff[200];  // ¶ÌÐÅ°ü
+
 static char *s_ProcessName;
-static int s_TestOption;
 static unsigned char s_DstRcv[3];
 static unsigned char s_CallingID[3];
 static unsigned char s_CalledID[3];
@@ -332,7 +332,7 @@ static pthread_t ODP_DataRcvPid;                // cc2ccl ÓïÒôÏÂÐÐ¹¦ÄÜ²âÊÔ
 static void ShowHelp();
 unsigned int get_dst_U32(const char *name, const char *prmpt, int min, int max);  // ³£ÓÃº¯Êý
 static void delay(unsigned long msec);
-static void ProcessNameSet(char *name);
+static void ProcessNameSave(char *name);
 static char *ProcessNameGet();
 static void TestInit();
 static int GetRandDigit();
@@ -344,8 +344,6 @@ static int get_src_dst_id(const char *name, char *SrcDev, char *DstDev);
 static int getLine (const char *prmpt, char *buff, int sz);
 static int digit_get(const char *prmpt, char *buff, int sz, int *pDigit);
 static unsigned long get_file_size(const char *path);
-static int Msg_Get(const char *prmpt, char *buff, int sz);
-static void SetSmsData();
 static void set_item_ID_input(int item, unsigned char *pBuff, char SrcDev, char DstDev);
 
 
@@ -376,7 +374,7 @@ static void VoiceCc2cclPptOn();
 static void VoiceCc2cclSend(int len, int format);
 static void VoiceCc2cclPptOff();
 static void PressVoiceCc2cclSend();
-static void VoiceDdl2CclSend(int len);
+static void VoiceDdl2CclSend(int len, int format);
 static void TestVoiceDll2ccl();
 static void VoiceDdl2CclData(unsigned char DataType);
 static int  VoiceDdl2CclLenGet();
@@ -402,50 +400,30 @@ static void ODP_MsGpsReport(void);              //2
 static void ODP_MsEnableIdt(void);              //1
 static void ODP_MsDisableIdt(void);             //0
 //---º¯Êý-¹¦ÄÜ²âÊÔ-init--
-static void Item_MSRemoteKillTest(int item);            //0
-static void Item_MsEnableTest(int item);                //1
-static void Item_MsGpsReportTest(int item);             //2
-static void Item_NasDisableTest(int item);              //3
-static void Item_NasEnableTest(int item);               //4
-static void Item_NasGpsReportTest(int item);            //5
-static void Item_NasStunTest(int item);                 //6
-static void Item_NeighborQueryTest(int item);           //7
-static void Item_ShortMessageTest(int item);            //8
+static void Ms_ItemHandler(int item);
+static void Nas_ItemNasHandler(int item);
+static void MS_GroupMsgHandler(int item);
+
+// GPS
+static void PrintFormatGpsInfo(SMS_INFO_S *SmsInfo);
 
 
 
-
-
-#if 0
-
-// op-Item
 DATA_ITEM_FUN_T atDataItemFun[] = {
-    {ITEM_MS_REMOTE_KILL , Item_MSRemoteKillTest   , ODP_MsDisableIdt      },   // 0
-    {ITEM_MS_ENABLE      , Item_MsEnableTest       , ODP_MsEnableIdt       },   // 1
-    {ITEM_MS_GPS_REPORT  , Item_MsGpsReportTest    , ODP_MsGpsReport       },   // 2
-    {ITEM_NAS_DISABLE    , Item_NasDisableTest     , ODP_NasDisableIdt     },   // 3
-    {ITEM_NAS_ENABLE     , Item_NasEnableTest      , ODP_NasEnableIdt      },   // 4
-    {ITEM_NAS_GPS_REPORT , Item_NasGpsReportTest   , ODP_NasGpsReport      },   // 5
-    {ITEM_NAS_STUN       , Item_NasStunTest        , ODP_NasStunIdt        },   // 6
-    {ITEM_NEIGHBOR_QUERY , Item_NeighborQueryTest  , ODP_NearNodeInfoQuery },   // 7
-    {ITEM_SHORT_MESSAGE  , Item_ShortMessageTest   , ODP_ShortMessage      },   // 8
-    {ITEM_MAX            , NULL                    , NULL                  }    // 9
-};
-#endif
 
-// op-Item
-DATA_ITEM_FUN_T atDataItemFun[] = {
-    {ITEM_MS_REMOTE_KILL , Item_MSRemoteKillTest   , ODP_MsDisableIdt      , "MS"},   // 0
-    {ITEM_MS_ENABLE      , Item_MsEnableTest       , ODP_MsEnableIdt       , "MS"},   // 1
-    {ITEM_MS_GPS_REPORT  , Item_MsGpsReportTest    , ODP_MsGpsReport       , "MS"},   // 2
-    {ITEM_NAS_DISABLE    , Item_NasDisableTest     , ODP_NasDisableIdt     , "Nas"},   // 3
-    {ITEM_NAS_ENABLE     , Item_NasEnableTest      , ODP_NasEnableIdt      , "Nas"},   // 4
-    {ITEM_NAS_GPS_REPORT , Item_NasGpsReportTest   , ODP_NasGpsReport      , "Nas"},   // 5
-    {ITEM_NAS_STUN       , Item_NasStunTest        , ODP_NasStunIdt        , "Nas"},   // 6
-    {ITEM_NEIGHBOR_QUERY , Item_NeighborQueryTest  , ODP_NearNodeInfoQuery , "Nas"},   // 7
-    {ITEM_SHORT_MESSAGE  , Item_ShortMessageTest   , ODP_ShortMessage      , "Group"},   // 8
-    {ITEM_MAX            , NULL                    , NULL                  , NULL}    // 9
+    {ITEM_MS_REMOTE_KILL , Ms_ItemHandler        , ODP_MsDisableIdt      , "MS",     "MS Remote Kill"     },   // 0
+    {ITEM_MS_ENABLE      , Ms_ItemHandler        , ODP_MsEnableIdt       , "MS",     "Ms Enable"          },   // 1
+    {ITEM_MS_GPS_REPORT  , Ms_ItemHandler        , ODP_MsGpsReport       , "MS",     "Ms Gps Report"      },   // 2
+    {ITEM_NAS_DISABLE    , Nas_ItemNasHandler    , ODP_NasDisableIdt     , "Nas",    "Nas Disable"        },   // 3
+    {ITEM_NAS_ENABLE     , Nas_ItemNasHandler    , ODP_NasEnableIdt      , "Nas",    "Nas Enable"         },   // 4
+    {ITEM_NAS_GPS_REPORT , Nas_ItemNasHandler    , ODP_NasGpsReport      , "Nas",    "Nas Gps Report"     },   // 5
+    {ITEM_NAS_STUN       , Nas_ItemNasHandler    , ODP_NasStunIdt        , "Nas",    "Nas Stun"           },   // 6
+    {ITEM_NEIGHBOR_QUERY , Nas_ItemNasHandler    , ODP_NearNodeInfoQuery , "Nas",    "Nas Neighbor Query" },   // 7
+    {ITEM_SHORT_MESSAGE  , MS_GroupMsgHandler    , ODP_ShortMessage      , "Group",  "Ms Short Message"   },   // 8
+    {ITEM_MAX            , NULL                  , NULL                  ,  NULL,     NULL                }    // 9
 };
+
+
 
 
 //---º¯Êý¶¨Òå---
@@ -468,6 +446,7 @@ void ShowHelp()
     explain:\n\
         -v -- voice test, cc to ccl\n\
         -d -- data  test, cc to ccl\n\
+        -g -- data  test, ccl to cc \n\
         -u -- voice test, dll to ccl\n\
         -p -- pressure test\n\
         -h -- help\n\
@@ -512,84 +491,6 @@ unsigned int U32Change2BigEndian(unsigned int data)
 
 
 
-
-
-
-
-int Msg_Get(const char *prmpt, char *buff, int sz)
-{
-    int ret;
-
-    ret = getLine(prmpt, buff, sz);
-    if (ret == TOO_LONG)
-    {
-        printf("\n\nInput MSG Is Too Long, Please Try Again\n\n");
-        return MSG_TOO_LONG_ERR;
-    }
-    else if (ret == NO_INPUT)
-    {
-        printf ("\n\nNo Input, Please Try Again\n\n");
-        return MSG_NO_INPUT_ERR;
-    }
-    else if (ret == OK)
-    {
-        return MSG_GET_OK;
-    }
-    return MSG_GET_OK;
-
-}
-
-
-
-
-
-
-
-void SetSmsData()
-{
-    int  i;
-    char buff[100];
-    int len = sizeof(s_SmsBuff);
-
-SET_SMS_DATA:
-
-    while (1)
-    {
-        printf("\n\nSet sms data, please input:\n\n");
-        if (Msg_Get("sms data>", buff, sizeof(buff)) == MSG_GET_OK)
-        {
-            break;
-        }
-    }
-
-    s_Message_len = strlen(buff); // ²é¿´ÊäÈëµÄ³¤¶È
-    printf("s_Message_len=(%d)\n", s_Message_len);
-
-    if (s_Message_len*2 > len)
-    {
-        printf("Set sms len is too long\n\n");
-        goto SET_SMS_DATA;
-    }
-
-    memset(s_SmsBuff, 0, len);
-
-    for (i = 0; i < s_Message_len; i++)
-    {
-        s_SmsBuff[i*2] = buff[i];
-    }
-
-    for (i = 0; i < s_Message_len*2; i++)
-    {
-        printf("%d=(%c)(%d)\n", i, s_SmsBuff[i], s_SmsBuff[i]);
-    }
-    
-}
-
-
-
-
-
-
 /*
  * name:   µ±Ç°º¯ÊýÃû×Ö
  * prmpt:  ×Ö·û´®²Ù×÷ÌáÊ¾
@@ -627,13 +528,12 @@ int get_src_dst_id(const char *name, char *SrcDev, char *DstDev)
     printf("please input the SrcDev ID and DstDev ID to test...\n");
     while(1)
     {
-        printf("[%s]...\nPlease Inpur Srcdev Value (0 < Srcdev < 31):\n\n", name);
+        printf("[%s]...\nPlease Inpur Srcdev Value (0~31):\n\n", name);
         if ((ret = digit_get("Enter Src ID>", buff, sizeof(buff), &digit)) == GET_SUCCEED)
         {
-            if (digit <= 31 && digit >= 0)
+            if (digit >= 0 && digit <= 31 )
             {
                 *SrcDev = digit;
-                printf("\nYou get Src %d(%#04x)\n\n", *SrcDev , *SrcDev );
                 break;
             }
             printf("\nThe Value Range Err\n");
@@ -642,13 +542,12 @@ int get_src_dst_id(const char *name, char *SrcDev, char *DstDev)
 
     while(1)
     {
-        printf("\n\nPlease Inpur DstDev Value (0 < Srcdev < 31):\n\n");
+        printf("\n\nPlease Inpur DstDev Value (0~31):\n\n");
         if ((ret = digit_get("Enter Dst ID>", buff, sizeof(buff), &digit)) == GET_SUCCEED)
         {
             if (digit <= 31 && digit >= 0)
             {
                 *DstDev = digit;
-                printf("\nYou get Dst %d(%#04x)\n\n", *DstDev , *DstDev );
                 break;
             }
             printf("\nThe Value Range Err\n");
@@ -680,14 +579,12 @@ int getLine(const char *prmpt, char *buff, int sz)
         printf("%s", prmpt);
         fflush(stdout);
     }
-
     // ×Ö·û´®ÊäÈë
     if (fgets(buff, sz, stdin) == NULL)
     {
         printf("NO_INPUT\n");
         return NO_INPUT;
     }
-
     // ÅÐ¶ÏbuffÖÐÊÇ·ñ½«ÊäÈë×Ö·ûÈ«²¿´æ´¢
     if (buff[strlen(buff)-1] != '\n')
     {
@@ -697,14 +594,10 @@ int getLine(const char *prmpt, char *buff, int sz)
         {
             extra = 1;
         }
-
         // ·µ»Ø TOO_LONG ËµÃ÷ÊäÈëµÄÊý¾Ý³¬¹ý»º´æ³¤¶È
-//      printf("[%s:%d]buff=(%s), sz=(%d), strlen(buff)=(%d)\n", __FUNCTION__, __LINE__, buff, sz, strlen(buff));
         return (extra == 1) ? TOO_LONG : OK;
     }
-
-
-//  È«²¿´æ´¢, ½«'\n'Ìæ»»Îª'\0'
+    //  È«²¿´æ´¢, ½«'\n'Ìæ»»Îª'\0'
     buff[strlen(buff)-1] = '\0';
     return OK;
 }
@@ -712,7 +605,7 @@ int getLine(const char *prmpt, char *buff, int sz)
 
 
 /**
- * @brief ½«±ê×¼ÊäÈë×Ö·û´®´æ´¢ÔÚbuff
+ * @brief ½«±ê×¼ÊäÈë×Ö·û´®´æ´¢ÔÚbuff, ²¢ÌáÊ¾³ö´íÔ­Òò
  * @param [in] prmpt  ×Ö·û´®ÌáÊ¾ÐÅÏ¢
  * @param [in] buff   ÊäÈë»º´æ
  * @param [in] sz     ÊäÈë»º´æ³¤¶È
@@ -754,23 +647,22 @@ int digit_get(const char *prmpt, char *buff, int sz, int *pDigit)
             printf("\n\nInput Data Is only Enter, Try Again\n\n");
             return CR_ERR;
         }
-//        printf("\n\nbuff=(%s), len=%d\n\n", buff, strlen(buff));
         *pDigit = atoi(buff);
-//        printf("\nYou get %d(%#x)\n\n", *pDigit, *pDigit);
     }
     return  GET_SUCCEED;
 }
 
 
+// ÔÝÍ££¬µÈ´ýÊäÈë»Ø³µ
 static void Pause()
 {
     int ch;
-    printf("\n\n\nPause!!! please press [Enter] key to continue...\n\n\n");
+    printf("\n\nPause!!! please press [Enter] key to continue...\n\n\n");
     while (((ch = getchar()) != '\n') && (ch != EOF));
 }
 
 
-
+// Ëæ»úÊý»ñÈ¡º¯Êý
 int GetRandDigit()
 {
     static int sRandFlag = 0;
@@ -783,7 +675,7 @@ int GetRandDigit()
 }
 
 
-
+// ºÁÃëÑÓÊ±º¯Êý
 void delay(unsigned long msec)
 {
     struct timeval tv;
@@ -811,21 +703,22 @@ void delay(unsigned long msec)
 
 
 
-
-void ProcessNameSet(char *name)
+// ½ø³ÌÃû±£´æ
+void ProcessNameSave(char *name)
 {
     s_ProcessName = name;
 }
 
-
+// ½ø³ÌÃû»ñÈ¡
 char *ProcessNameGet()
 {
     return (s_ProcessName == NULL )? NULL :s_ProcessName;
 }
 
+
+
 // »ñÈ¡ÎÄ¼þ×Ö½ÚÊý
 // Ê§°Ü·µ»Ø-1
-
 unsigned long get_file_size(const char *path)
 {
     struct stat statbuff;
@@ -833,8 +726,7 @@ unsigned long get_file_size(const char *path)
 }
 
 
-
-
+// ½ø³ÌÍ¨ÐÅÌ×½Ó×Ö³õÊ¼»¯
 void IPC_SocketVoiceSoundCc2cclInit()
 {
 
@@ -866,7 +758,7 @@ void IPC_SocketVoiceSigCc2cclInit()
           perror("socket>");
           exit(EXIT_FAILURE);
     }
-    
+
     bzero(&s_tCenterSigAddr, sizeof(s_tCenterSigAddr));
     s_tCenterSigAddr.sin_family = AF_INET;
     s_tCenterSigAddr.sin_addr.s_addr =inet_addr("127.0.0.1");       //ÕâÀï²»Ò»Ñù
@@ -912,7 +804,7 @@ void IPC_SocketDataCc2cclInit()
 }
 
 
-// ccl2cc  
+// ccl2cc
 static int s_CCsigSocket;
 static struct sockaddr_in g_Ccl2ccSigAddr;
 static void IPC_Ccl2ccInit();
@@ -928,12 +820,12 @@ void IPC_Ccl2ccInit()
         exit(EXIT_FAILURE);
     }
 
-    // ccl2cc  
+    // ccl2cc
     bzero(&g_Ccl2ccSigAddr, sizeof(struct sockaddr_in));
     g_Ccl2ccSigAddr.sin_family = AF_INET;
     g_Ccl2ccSigAddr.sin_port = htons(SOCK_PORT_CCL_CC_S);
     g_Ccl2ccSigAddr.sin_addr.s_addr = INADDR_ANY;
-    
+
     if (bind(s_CCsigSocket, (struct sockaddr *)(&g_Ccl2ccSigAddr), sizeof(struct sockaddr_in)) == -1)
     {
         printf("CC: Socket Binds Error : %s\n\a", strerror(errno));
@@ -1030,24 +922,9 @@ void ODP_MsDisableIdt(void)         // 0
     CcSMessage.MsgData.sender_num[0] = 0x00;
     CcSMessage.MsgData.sender_num[1] = 0x00;
     CcSMessage.MsgData.sender_num[2] = 0x01;
-
-    if (s_TestOption == OPTION_PRESS)
-    {
-        CcSMessage.MsgData.receiver_num[0] = s_DstRcv[0];
-        CcSMessage.MsgData.receiver_num[1] = s_DstRcv[1];
-        CcSMessage.MsgData.receiver_num[2] = s_DstRcv[2];
-    }
-    else if (s_TestOption == OPTION_FEATURE)
-    {
-        CcSMessage.MsgData.receiver_num[0] = s_DstRcv[0];
-        CcSMessage.MsgData.receiver_num[1] = s_DstRcv[1];
-        CcSMessage.MsgData.receiver_num[2] = s_DstRcv[2];
-    }
-    else
-    {
-        printf("err: [%s:%d] illegal \n", __FUNCTION__,__LINE__);
-        exit(EXIT_FAILURE);
-    }
+    CcSMessage.MsgData.receiver_num[0] = s_DstRcv[0];
+    CcSMessage.MsgData.receiver_num[1] = s_DstRcv[1];
+    CcSMessage.MsgData.receiver_num[2] = s_DstRcv[2];
     sendto(SigSocket, &CcSMessage, sizeof(CC_CCL_DL_T), 0, (struct sockaddr *)(&CclSigAddr), UDPSize);
 }
 
@@ -1085,25 +962,9 @@ void ODP_MsEnableIdt(void)      // 1
     CcSMessage.MsgData.sender_num[0] = 0x00;
     CcSMessage.MsgData.sender_num[1] = 0x00;
     CcSMessage.MsgData.sender_num[2] = 0x01;
-
-    if (s_TestOption == OPTION_PRESS)
-    {
-        CcSMessage.MsgData.receiver_num[0] = s_DstRcv[0];
-        CcSMessage.MsgData.receiver_num[1] = s_DstRcv[1];
-        CcSMessage.MsgData.receiver_num[2] = s_DstRcv[2];
-    }
-    else if (s_TestOption == OPTION_FEATURE)
-    {
-        CcSMessage.MsgData.receiver_num[0] = s_DstRcv[0];
-        CcSMessage.MsgData.receiver_num[1] = s_DstRcv[1];
-        CcSMessage.MsgData.receiver_num[2] = s_DstRcv[2];
-    }
-    else
-    {
-        printf("err: [%s:%d] illegal \n", __FUNCTION__,__LINE__);
-        exit(EXIT_FAILURE);
-    }
-
+    CcSMessage.MsgData.receiver_num[0] = s_DstRcv[0];
+    CcSMessage.MsgData.receiver_num[1] = s_DstRcv[1];
+    CcSMessage.MsgData.receiver_num[2] = s_DstRcv[2];
     sendto(SigSocket, &CcSMessage, sizeof(CC_CCL_DL_T), 0, (struct sockaddr *)(&CclSigAddr), UDPSize);
 }
 
@@ -1135,43 +996,19 @@ void ODP_MsGpsReport(void)      // 2
     CcSMessage.MsgData.call_id = 0x0001;
     CcSMessage.MsgData.voice_id = 0xffff;
     CcSMessage.MsgData.source_stat = 0;
-    CcSMessage.MsgData.sms_type = GPS_REPOTR_MS;
+    CcSMessage.MsgData.sms_type = GPS_REPORT_MS;
     CcSMessage.MsgData.valid_length = 4;
     CcSMessage.MsgData.sms_format = 0x01;
     CcSMessage.MsgData.sender_num[0] = 0x00;
     CcSMessage.MsgData.sender_num[1] = 0x00;
     CcSMessage.MsgData.sender_num[2] = 0x01;
-
-    if (s_TestOption == OPTION_PRESS)
-    {
-//        CcSMessage.MsgData.receiver_num[0] = 0x00;
-//        CcSMessage.MsgData.receiver_num[1] = 0x00;
-//        CcSMessage.MsgData.receiver_num[2] = 0x8f;
-        CcSMessage.MsgData.receiver_num[0] = s_DstRcv[0];
-        CcSMessage.MsgData.receiver_num[1] = s_DstRcv[1];
-        CcSMessage.MsgData.receiver_num[2] = s_DstRcv[2];
-
-    }
-    else if (s_TestOption == OPTION_FEATURE)
-    {
-        CcSMessage.MsgData.receiver_num[0] = s_DstRcv[0];
-        CcSMessage.MsgData.receiver_num[1] = s_DstRcv[1];
-        CcSMessage.MsgData.receiver_num[2] = s_DstRcv[2];
-
-
-    }
-    else
-    {
-        printf("err: [%s:%d] illegal \n", __FUNCTION__,__LINE__);
-        exit(EXIT_FAILURE);
-    }
-
+    CcSMessage.MsgData.receiver_num[0] = s_DstRcv[0];
+    CcSMessage.MsgData.receiver_num[1] = s_DstRcv[1];
+    CcSMessage.MsgData.receiver_num[2] = s_DstRcv[2];
     UINT8 data[4] = {0x0a, 0x00, 0x00, 0x8f};
     data[1] = s_DstRcv[0];
     data[2] = s_DstRcv[1];
     data[3] = s_DstRcv[2];
-
-    
     memcpy(CcSMessage.MsgData.sms_data, data, 8);
     sendto(SigSocket, &CcSMessage, sizeof(CC_CCL_DL_T), 0, (struct sockaddr *)(&CclSigAddr), UDPSize);
 }
@@ -1218,23 +1055,8 @@ void ODP_NasDisableIdt(void)        // 3
     CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     CcSMessage.MsgData.receiver_num[1] = 0x00;
     CcSMessage.MsgData.receiver_num[2] = 0x00;
-
-    if (s_TestOption == OPTION_PRESS)
-    {
-        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
-        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
-    }
-    else if (s_TestOption == OPTION_FEATURE)
-    {
-        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
-        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
-    }
-    else
-    {
-        printf("err: [%s:%d] illegal \n", __FUNCTION__,__LINE__);
-        exit(EXIT_FAILURE);
-    }
-
+    CcSMessage.MsgData.sender_num[0] = s_SrcDev;
+    CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     sendto(SigSocket, &CcSMessage, sizeof(CC_CCL_DL_T), 0, (struct sockaddr *)(&CclSigAddr), UDPSize);
 }
 
@@ -1278,25 +1100,8 @@ static void ODP_NasEnableIdt(void)   // 4
     CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     CcSMessage.MsgData.receiver_num[1] = 0x00;
     CcSMessage.MsgData.receiver_num[2] = 0x00;
-
-    // Çø·ÖÑ¹Á¦»¹ÊÇ¹¦ÄÜ²âÊÔ
-    if (s_TestOption == OPTION_PRESS)
-    {
-        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
-        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
-    }
-    else if (s_TestOption == OPTION_FEATURE)
-    {
-        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
-        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
-    }
-    else
-    {
-        printf("err: [%s:%d] illegal \n", __FUNCTION__,__LINE__);
-        exit(EXIT_FAILURE);
-    }
-
-
+    CcSMessage.MsgData.sender_num[0] = s_SrcDev;
+    CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     sendto(SigSocket, &CcSMessage, sizeof(CC_CCL_DL_T), 0, (struct sockaddr *)(&CclSigAddr), UDPSize);
 }
 
@@ -1340,25 +1145,9 @@ void ODP_NasGpsReport(void)   //5
     CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     CcSMessage.MsgData.receiver_num[1] = 0x00;
     CcSMessage.MsgData.receiver_num[2] = 0x00;
-
     // Çø·ÖÑ¹Á¦»¹ÊÇ¹¦ÄÜ²âÊÔ
-    if (s_TestOption == OPTION_PRESS)
-    {
-        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
-        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
-    }
-    else if (s_TestOption == OPTION_FEATURE)
-    {
-        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
-        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
-    }
-    else
-    {
-        printf("err: [%s:%d] illegal \n", __FUNCTION__,__LINE__);
-        exit(EXIT_FAILURE);
-    }
-
-
+    CcSMessage.MsgData.sender_num[0] = s_SrcDev;
+    CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     sendto(SigSocket, &CcSMessage, sizeof(CC_CCL_DL_T), 0, (struct sockaddr *)(&CclSigAddr), UDPSize);
 }
 
@@ -1401,26 +1190,8 @@ void ODP_NasStunIdt(void)       // 6
     CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     CcSMessage.MsgData.receiver_num[1] = 0x00;
     CcSMessage.MsgData.receiver_num[2] = 0x00;
-
-    // Çø·ÖÑ¹Á¦»¹ÊÇ¹¦ÄÜ²âÊÔ
-    if (s_TestOption == OPTION_PRESS)
-    {
-        CcSMessage.MsgData.sender_num[0] =   s_SrcDev;
-        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
-    }
-    else if (s_TestOption == OPTION_FEATURE)
-    {
-        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
-        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
-    }
-    else
-    {
-        printf("err: [%s:%d] illegal \n", __FUNCTION__,__LINE__);
-        exit(EXIT_FAILURE);
-    }
-
-
-
+    CcSMessage.MsgData.sender_num[0] = s_SrcDev;
+    CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     sendto(SigSocket, &CcSMessage, sizeof(CC_CCL_DL_T), 0, (struct sockaddr *)(&CclSigAddr), UDPSize);
 }
 
@@ -1453,7 +1224,7 @@ void ODP_NearNodeInfoQuery(void)        // 7
     CcSMessage.MsgData.call_id = 0x0001;
     CcSMessage.MsgData.voice_id = 0xffff;
     CcSMessage.MsgData.source_stat = 0;
-    CcSMessage.MsgData.sms_type = NEGHR_QUERY;
+    CcSMessage.MsgData.sms_type = NEIGHBOR_QUERY;
     CcSMessage.MsgData.valid_length = 0;
     CcSMessage.MsgData.sms_format = 0x01;
 //    CcSMessage.MsgData.sender_num[0] = SrcDev;
@@ -1464,24 +1235,8 @@ void ODP_NearNodeInfoQuery(void)        // 7
     CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     CcSMessage.MsgData.receiver_num[1] = 0x00;
     CcSMessage.MsgData.receiver_num[2] = 0x00;
-
-    // Çø·ÖÑ¹Á¦»¹ÊÇ¹¦ÄÜ²âÊÔ
-    if (s_TestOption == OPTION_PRESS)
-    {
-        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
-        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
-    }
-    else if (s_TestOption == OPTION_FEATURE)
-    {
-        CcSMessage.MsgData.sender_num[0] = s_SrcDev;
-        CcSMessage.MsgData.receiver_num[0] = s_DstDev;
-    }
-    else
-    {
-        printf("err: [%s:%d] illegal\n", __FUNCTION__,__LINE__);
-        exit(EXIT_FAILURE);
-    }
-
+    CcSMessage.MsgData.sender_num[0] = s_SrcDev;
+    CcSMessage.MsgData.receiver_num[0] = s_DstDev;
     sendto(SigSocket, &CcSMessage, sizeof(CC_CCL_DL_T), 0, (struct sockaddr *)(&CclSigAddr), UDPSize);
 }
 
@@ -1495,17 +1250,15 @@ void ODP_NearNodeInfoQuery(void)        // 7
  * @since   trunk.00001
  * @bug
  */
-
-
 void ODP_ShortMessage(void)     //8
 {
-   
+
     int i;
     int pDigit_len;
-    char *pDigit= "0123456789ABCDEF";
+    const char *pDigit= "0123456789ABCDEF";  // 16×Ö·û
     unsigned char *pSms_data;
     CC_CCL_DL_T CcSMessage;
-    
+
     printf("short message download \n");
     CcSMessage.Head = htons(0x13ec);
     CcSMessage.Type = 0x000e;
@@ -1553,276 +1306,88 @@ void ODP_ShortMessage(void)     //8
     CcSMessage.MsgData.sms_data[16] = '3';
     CcSMessage.MsgData.sms_data[17] = 0x00;
 
-    if (s_TestOption == OPTION_PRESS)
+    CcSMessage.MsgData.receiver_num[0] = s_GroupID[0];
+    CcSMessage.MsgData.receiver_num[1] = s_GroupID[1];
+    CcSMessage.MsgData.receiver_num[2] = s_GroupID[2];
+    CcSMessage.MsgData.valid_length = s_Message_len*2;
+
+    pSms_data = CcSMessage.MsgData.sms_data;
+    memset(pSms_data, 0, s_Message_len*2);  //ÓÐÐ§·¢ËÍ³¤¶È¡£UTF-16 Õ¼ÓÃÁ½¸ö×Ö½Ú
+    pDigit_len = strlen(pDigit);
+
+    for (i = 0; i < s_Message_len ; i++)
     {
-        CcSMessage.MsgData.receiver_num[0] = s_GroupID[0];
-        CcSMessage.MsgData.receiver_num[1] = s_GroupID[1];
-        CcSMessage.MsgData.receiver_num[2] = s_GroupID[2];
-        CcSMessage.MsgData.valid_length = s_Message_len*2;
+        pSms_data[i*2] = pDigit[i % pDigit_len];
     }
-    else if (s_TestOption == OPTION_FEATURE)
+
+    pSms_data = &CcSMessage.MsgData.sms_data[0];
+
+    printf("Msg_len=(%d)\n", s_Message_len);
+
+    printf("Msg_buf:\n");
+    for (i = 0; i < s_Message_len*2; i++)
     {
-        CcSMessage.MsgData.receiver_num[0] = s_GroupID[0];
-        CcSMessage.MsgData.receiver_num[1] = s_GroupID[1];
-        CcSMessage.MsgData.receiver_num[2] = s_GroupID[2];
-        CcSMessage.MsgData.valid_length = s_Message_len*2;
-
-        pSms_data = CcSMessage.MsgData.sms_data;
-        memset(pSms_data, 0, s_Message_len*2);  //ÓÐÐ§·¢ËÍ³¤¶È¡£UTF-16 Õ¼ÓÃÁ½¸ö×Ö½Ú
-        pDigit_len = strlen(pDigit);
-        printf("pDigit_len =%d, s_Message_len=%d\n", pDigit_len, s_Message_len);
-
-        for (i = 0; i < s_Message_len ; i++)
-        {
-            pSms_data[i*2] = pDigit[i % pDigit_len];
-        }
-
-        pSms_data = &CcSMessage.MsgData.sms_data[0];
-
-        for (i = 0; i < s_Message_len*2; i++)
-        {
-            printf("(%d)=(%c)(%#04x)\n", i, pSms_data[i], pSms_data[i]);
-        }
-    }
-    else
-    {
-        printf("err: [%s:%d] illegal \n", __FUNCTION__,__LINE__);
-        exit(EXIT_FAILURE);
+        printf("\t(%d)=(%c)-(%#04x)\n", i, pSms_data[i], pSms_data[i]);
     }
 
     sendto(SigSocket, &CcSMessage, sizeof(CC_CCL_DL_T), 0, (struct sockaddr *)(&CclSigAddr), UDPSize);
 }
 
 
-
-
-
-void Item_MSRemoteKillTest(int item)              // 0
+// ÊÖÌ¨ÏÂÐÐ×¼±¸
+void Ms_ItemHandler(int item)
 {
-    char name[50];
-    unsigned int dst = 0;
+    char name[100];
+    unsigned int MsDst, dst = 0;
     unsigned char *pBuff = (unsigned char *)&dst;
-    snprintf(name, sizeof(name), "%s", __FUNCTION__);
+    snprintf(name, sizeof(name), "%d-%s", item, atDataItemFun[item].ItemName);
     while (1)
     {
-        printf("please input the dst ID 0~0xFFFFFF to test...\
-            \n0~0xFFFFFF(0~16777215) mean maximum values of 3 bytes\n");
+        printf("please input the dst ID 0~16777215(0xFFFFFF) to test\n");
         dst = get_value_u32(name, "dst ID>", &dst);
         if (dst >= 0  && dst <= 16777215)
         {
             break;
         }
-        printf("the dst ID is not in range\n\n");
+        printf("the val is not in range\n\n");
     }
-
-	// dst ¸³Öµ²»¿ÉÉ¾
+    // dst ¸³Öµ²»¿ÉÉ¾
+    MsDst = dst;
     dst = U32Change2BigEndian(dst) >> 8;
-
-#if 0
-    s_DstRcv[0] = pBuff[0];
-    s_DstRcv[1] = pBuff[1];
-    s_DstRcv[2] = pBuff[2];
-    printf("\nPlease confirm your input\n");
-    printf("s_DstRcv[0]=%d\t(%#04x)\n", s_DstRcv[0], s_DstRcv[0]);
-    printf("s_DstRcv[1]=%d\t(%#04x)\n", s_DstRcv[1], s_DstRcv[1]);
-    printf("s_DstRcv[2]=%d\t(%#04x)\n", s_DstRcv[2], s_DstRcv[2]);
-#endif
-	
-	set_item_ID_input(item, pBuff, 0, 0);
+    set_item_ID_input(item, pBuff, 0, 0);
+    printf("\nSend:\n\tNas ---------------------> MsDst(%d)\n", MsDst);
     Pause();
-	atDataItemFun[item].pFunOdp();	// ODP_MsDisableIdt();
+    atDataItemFun[item].pFunOdp();
 }
 
 
-
-void Item_MsEnableTest(int item)                   // 1
+// Á´Â·»úÏÂÐÐ×¼±¸
+void Nas_ItemNasHandler(int item)
 {
-
-    char name[50];
-    unsigned int dst = 0;
-    unsigned char *pBuff = (unsigned char *)&dst;
-    snprintf(name, sizeof(name), "%s", __FUNCTION__);
-    while (1)
-    {
-        printf("please input the dst ID 0~0xFFFFFF to test...\
-            \n0~0xFFFFFF(0~16777215) mean maximum values of 3 bytes\n");
-        dst = get_value_u32(name, "dst ID>", &dst);
-        if (dst >= 0  &&  dst <= 16777215)
-        {
-            break;
-        }
-        printf("the dst ID is not in range\n\n");
-    }
-
-    dst = U32Change2BigEndian(dst) >> 8;
-#if 0
-    s_DstRcv[0] = pBuff[0];
-    s_DstRcv[1] = pBuff[1];
-    s_DstRcv[2] = pBuff[2];
-    printf("\nPlease confirm your input\n");
-    printf("s_DstRcv[0]=%d\t(%#04x)\n", s_DstRcv[0], s_DstRcv[0]);
-    printf("s_DstRcv[1]=%d\t(%#04x)\n", s_DstRcv[1], s_DstRcv[1]);
-    printf("s_DstRcv[2]=%d\t(%#04x)\n", s_DstRcv[2], s_DstRcv[2]);
-#endif
-	
-	set_item_ID_input(item, pBuff, 0, 0);
-    Pause();
-	atDataItemFun[item].pFunOdp();	// ODP_MsEnableIdt();
-}
-
-
-
-
-void Item_MsGpsReportTest(int item)               // 2
-{
-    char name[50];
-    unsigned int dst = 0;
-    unsigned char *pBuff = (unsigned char *)&dst;
-    snprintf(name, sizeof(name), "%s", __FUNCTION__);
-    while (1)
-    {
-        printf("please input the dst ID 0~0xFFFFFF to test...\
-            \n0~0xFFFFFF(0~16777215) mean maximum values of 3 bytes\n");
-        dst = get_value_u32(name, "dst ID>", &dst);
-        if (dst >= 0 && dst <= 16777215)
-        {
-            break;
-        }
-        printf("the dst ID is not in range\n\n");
-    }
-	
-    dst = U32Change2BigEndian(dst) >> 8;
-
-#if 0
-    s_DstRcv[0] = pBuff[0];
-    s_DstRcv[1] = pBuff[1];
-    s_DstRcv[2] = pBuff[2];
- 
-    printf("\nPlease confirm your input\n");
-    printf("s_DstRcv[0]=%d\t(%#04x)\n", s_DstRcv[0], s_DstRcv[0]);
-    printf("s_DstRcv[1]=%d\t(%#04x)\n", s_DstRcv[1], s_DstRcv[1]);
-    printf("s_DstRcv[2]=%d\t(%#04x)\n", s_DstRcv[2], s_DstRcv[2]);
-#endif
-	set_item_ID_input(item, pBuff, 0, 0);
-    Pause();
-	atDataItemFun[item].pFunOdp();	// ODP_MsGpsReport();
-}
-
-
-
-void Item_NasDisableTest(int item)                 // 3
-{
-    char name[50];
+    char name[100];
     char SrcDev, DstDev;
-    snprintf(name, sizeof(name), "%s", __FUNCTION__);
+    snprintf(name, sizeof(name), "%d-%s", item, atDataItemFun[item].ItemName);
     get_src_dst_id(name, &SrcDev, &DstDev);
-
-#if 0
-    s_SrcDev = SrcDev;
-    s_DstDev = DstDev;
-    printf("\nPlease confirm your input\n");
-    printf("you get the SrcDev ID(%d) and DstDev(%d) \n\n", SrcDev, DstDev);
-#endif
-	set_item_ID_input(item, NULL, SrcDev, DstDev);
+    set_item_ID_input(item, NULL, SrcDev, DstDev);
+    printf("\nSend:\n\tSrc(%d) ---------------------> Dst(%d)\n", SrcDev, DstDev);
     Pause();
-	atDataItemFun[item].pFunOdp();	// ODP_NasDisableIdt();
-}
-
-
-void Item_NasEnableTest(int item)                  // 4
-{
-    char name[50];
-    char SrcDev, DstDev;
-    snprintf(name, sizeof(name), "%s", __FUNCTION__);
-    get_src_dst_id(name, &SrcDev, &DstDev);
-
-#if 0
-    s_SrcDev = SrcDev;
-    s_DstDev = DstDev;
-    printf("\nPlease confirm your input\n");
-    printf("you get the SrcDev ID(%d) and DstDev(%d) \n\n", SrcDev, DstDev);
-#endif
-	set_item_ID_input(item, NULL, SrcDev, DstDev);
-    Pause();
-	atDataItemFun[item].pFunOdp();	// ODP_NasEnableIdt();
-}
-
-
-void Item_NasGpsReportTest(int item)              // 5
-{
-    char name[50];
-    char SrcDev, DstDev;
-    snprintf(name, sizeof(name), "%s", __FUNCTION__);
-    get_src_dst_id(name, &SrcDev, &DstDev);
-#if 0
-    s_SrcDev = SrcDev;
-    s_DstDev = DstDev;
-    printf("\nPlease confirm your input\n");
-    printf("you get the SrcDev ID(%d) and DstDev(%d) \n\n", SrcDev, DstDev);
-#endif
-	set_item_ID_input(item, NULL, SrcDev, DstDev);
-    Pause();
-	atDataItemFun[item].pFunOdp();	// ODP_NasGpsReport();
-    
-}
-
-void Item_NasStunTest(int item)                    // 6
-{
-    char name[50];
-    char SrcDev, DstDev;
-    snprintf(name, sizeof(name), "%s", __FUNCTION__);
-    get_src_dst_id(name, &SrcDev, &DstDev);
-#if 0
-    s_SrcDev = SrcDev;
-    s_DstDev = DstDev;
-    printf("\nPlease confirm your input\n");
-    printf("you get the SrcDev ID(%d) and DstDev(%d) \n\n", SrcDev, DstDev);
-#endif
-	set_item_ID_input(item, NULL, SrcDev, DstDev);
-    Pause();
-	atDataItemFun[item].pFunOdp();	// ODP_NasStunIdt();
+    atDataItemFun[item].pFunOdp();
 }
 
 
 
-
-void Item_NeighborQueryTest(int item)              // 7
-{
-    char name[50];
-    char SrcDev, DstDev;
-    snprintf(name, sizeof(name), "%s", __FUNCTION__);
-    get_src_dst_id(name, &SrcDev, &DstDev);
-#if 0
-    s_SrcDev = SrcDev;
-    s_DstDev = DstDev;
-    printf("\nPlease confirm your input\n");
-    printf("you get the SrcDev ID(%d) and DstDev(%d) \n\n", SrcDev, DstDev);
-#endif
-	set_item_ID_input(item, NULL, SrcDev, DstDev);
-    Pause();
-	atDataItemFun[item].pFunOdp();	// ODP_NearNodeInfoQuery();
-}
-
-
-
-
-
-
-
-
-void Item_ShortMessageTest(int item)      // 8
+void MS_GroupMsgHandler(int item)      // 8
 {
     // ×éID
-    char buff[256];
-    unsigned int dst = 0;
+    char name[100];
+    unsigned int Group, dst = 0;
     unsigned int len = 0;
     unsigned char *pBuff = (unsigned char *)&dst;
-    snprintf(buff, sizeof(buff), "%s", __FUNCTION__);
+    snprintf(name, sizeof(name), "%d-%s", item, atDataItemFun[item].ItemName);
     while (1)
     {
-        printf("please input the group_ID 0~0xFFFFFF to test...\
-            \n0~0xFFFFFF(0~16777215) mean maximum values of 3 bytes\n");
-        dst = get_value_u32(buff, "group ID>", &dst);
+        printf("please input the group ID 0~16777215(0xFFFFFF) to test\n");
+        dst = get_value_u32(name, "group ID>", &dst);
         if (dst >= 0  && dst <= 16777215)
         {
             printf("you get the group_ID %d(%#010x)\n\n", dst, dst);
@@ -1830,17 +1395,15 @@ void Item_ShortMessageTest(int item)      // 8
         }
         printf("the msg group_ID is not in range\n\n");
     }
+    Group = dst;
     dst = U32Change2BigEndian(dst) >> 8;
-#if 0
-    s_GroupID[0] = pBuff[0];
-    s_GroupID[1] = pBuff[1];
-    s_GroupID[2] = pBuff[2];
-#endif
+    set_item_ID_input(item, pBuff, 0, 0);
+
     // °ü³¤¶È
     while (1)
     {
-        printf("please input the packet len 1~100 to test...\n");
-        len = get_value_u32(buff, "packet len>", &dst);
+        printf("please input the packet len 1~100(valid date 0~31) to test \n");
+        len = get_value_u32(name, "packet len>", &dst);
         if (len > 0  && len <= 100)
         {
             break;
@@ -1848,36 +1411,31 @@ void Item_ShortMessageTest(int item)      // 8
         printf("the the msg len is not in range\n\n");
     }
 
-	set_item_ID_input(item, pBuff, 0, 0);
     s_Message_len = len;
-    printf("s_Message_len=%d\n",s_Message_len);
-//    SetSmsData(); ÔÝÊ±²»ÓÃ
+    printf("\nSend:\n\tNas ---------------------> Group(%d)\n", Group);
     Pause();
-	atDataItemFun[item].pFunOdp();	// ODP_ShortMessage();
+    atDataItemFun[item].pFunOdp();  // ODP_ShortMessage();
 }
 
 
+// ÉèÖÃÈ«¾Ö±äÁ¿
 void set_item_ID_input(int item, unsigned char *pBuff, char SrcDev, char DstDev)
 {
     const char *token;
     token = atDataItemFun[item].token;
-    printf("\nPlease confirm your input\n");
-    if ((strncmp(token, "MS", strlen(token)) == 0) && (pBuff != NULL)) 
+    if ((strncmp(token, "MS", strlen(token)) == 0) && (pBuff != NULL))
     {
         s_DstRcv[0] = pBuff[0];
         s_DstRcv[1] = pBuff[1];
         s_DstRcv[2] = pBuff[2];
         // item-0   item-1  item-2
-        printf("s_DstRcv[0]=%d\t(%#04x)\n", s_DstRcv[0], s_DstRcv[0]);
-        printf("s_DstRcv[1]=%d\t(%#04x)\n", s_DstRcv[1], s_DstRcv[1]);
-        printf("s_DstRcv[2]=%d\t(%#04x)\n", s_DstRcv[2], s_DstRcv[2]);  
     }
     else if (strncmp(token, "Nas", strlen(token)) == 0)
     {
         s_SrcDev = SrcDev;
         s_DstDev = DstDev;
         // item-3, item-4, item-5, item-6, item-7
-        printf("you get the SrcID=%d(%#04X) and DstId=%d(%#04X)\n\n", SrcDev, SrcDev, DstDev, DstDev);
+
     }
     else if (strncmp(token, "Group", strlen(token)) == 0)
     {
@@ -1885,9 +1443,6 @@ void set_item_ID_input(int item, unsigned char *pBuff, char SrcDev, char DstDev)
         s_GroupID[1] = pBuff[1];
         s_GroupID[2] = pBuff[2];
         // item-8
-        printf("s_GroupID[0]=%d\t(%#04x)\n", s_GroupID[0], s_GroupID[0]);
-        printf("s_GroupID[1]=%d\t(%#04x)\n", s_GroupID[1], s_GroupID[1]);
-        printf("s_GroupID[2]=%d\t(%#04x)\n", s_GroupID[2], s_GroupID[2]);
     }
     else
     {
@@ -1912,15 +1467,13 @@ void PressVoiceCc2cclSend()
     CENTER_VOICE_DATA tCenterVoiceData;
     CENTER_VOICE_DATA *pSendBuff = &tCenterVoiceData;
     memset(pSendBuff, 0, sizeof(CENTER_VOICE_DATA));
-
     format = GetRandDigit() % 2;
     pVoiceFileName = ((format == AMBE_FORMAT) ? AMBE_FILE_NAME : NVOC_FILE_NAME);
-
 
     // ÎÄ¼þ×Ö½ÚÊý×ÖÎª27K, Ò»Ö¡27bytes, SendLenµÄ³¤¶ÈÉè¶¨Îª200~1000
     SendLen  = GetRandDigit() % POCKET_BYTE_MAX;
     SendLen = (SendLen < POCKET_BYTE_MIN) ? (SendLen + POCKET_BYTE_MIN) : SendLen;      // ×îÐ¡200°ü
-    printf("[%s:%d] format=%d, SendLen=%d\n",__FUNCTION__, __LINE__, format, SendLen);  // 
+    printf("[%s:%d] format=%d, SendLen=%d\n",__FUNCTION__, __LINE__, format, SendLen);  //
 
     // 1-ÏÈÅÐ¶ÏÎÄ¼þÊÇ·ñ´æÔÚ
     if ((ret = access(pVoiceFileName, F_OK)) < 0)
@@ -1958,7 +1511,6 @@ void PressVoiceCc2cclSend()
         exit(EXIT_FAILURE);
     }
 
-
 #if 0
     // 6-ÅÐ¶ÏÊÇ·ñÈ«²¿¶Á³ö
     ret = feof(fp);
@@ -1972,8 +1524,6 @@ void PressVoiceCc2cclSend()
         exit(EXIT_FAILURE);
     }
 #endif
-
-
 
     // 6-¹Ø±ÕÎÄ¼þ
     if (fclose(fp) != 0)
@@ -1994,12 +1544,7 @@ void PressVoiceCc2cclSend()
         delay(35);
     }
 
-
-
-//    printf("pCache->len=%d\n", pCache->len);
-//    sleep(1);
     free(pCache->Buff);
-
 }
 
 
@@ -2024,7 +1569,7 @@ void SetVoiceID()
 {
     unsigned int dst;
     char name[200];
-	printf("\nInit Voice outband Calling_ID & Called_ID\n");
+    printf("\nInit Voice outband Calling_ID & Called_ID\n");
     snprintf(name, sizeof(name), "Fun:[%s], %s", __FUNCTION__, "input the [Calling] ID (0~16777215) to test, CallingID=any key\n");
     dst = get_dst_U32(name, "Entry CallingID>", 0, 16777215);
     dst = U32Change2BigEndian(dst) >> 8;
@@ -2037,14 +1582,14 @@ void SetVoiceID()
     s_CalledID[0] = ((unsigned char *)&dst)[0];
     s_CalledID[1] = ((unsigned char *)&dst)[1];
     s_CalledID[2] = ((unsigned char *)&dst)[2];
-	printf("\nPlease confirm your input\n");
-	printf("s_CallingID[0]=%-8d(%#04x)\n", s_CallingID[0], s_CallingID[0]);
-	printf("s_CallingID[1]=%-8d(%#04x)\n", s_CallingID[1], s_CallingID[1]);
-	printf("s_CallingID[2]=%-8d(%#04x)\n", s_CallingID[2], s_CallingID[2]);
-	printf("s_CalledID[0]=%-8d(%#04x)\n",  s_CallingID[0], s_CalledID[0]);
-	printf("s_CalledID[1]=%-8d(%#04x)\n",  s_CallingID[1], s_CalledID[1]);
-	printf("s_CalledID[2]=%-8d(%#04x)\n",  s_CallingID[2], s_CalledID[2]);
-	Pause();
+    printf("\nPlease confirm your input\n");
+    printf("s_CallingID[0]=%-8d(%#04x)\n", s_CallingID[0], s_CallingID[0]);
+    printf("s_CallingID[1]=%-8d(%#04x)\n", s_CallingID[1], s_CallingID[1]);
+    printf("s_CallingID[2]=%-8d(%#04x)\n", s_CallingID[2], s_CallingID[2]);
+    printf("s_CalledID[0]=%-8d(%#04x)\n",  s_CallingID[0], s_CalledID[0]);
+    printf("s_CalledID[1]=%-8d(%#04x)\n",  s_CallingID[1], s_CalledID[1]);
+    printf("s_CalledID[2]=%-8d(%#04x)\n",  s_CallingID[2], s_CalledID[2]);
+    Pause();
 }
 
 
@@ -2052,14 +1597,14 @@ void SetVoiceID()
 
 void SetSrcDstID()
 {
-	char name[50];
-	printf("\nInit NAS SrcID & DstID \n");
-	snprintf(name, sizeof(name), "%s", __FUNCTION__);
-	get_src_dst_id(name, &s_SrcDev, &s_DstDev);
-	printf("\nPlease confirm your input\n");
-	printf("s_SrcDev=%d\t(%#04x)\n", s_SrcDev, s_SrcDev);
-	printf("s_DstDev=%d\t(%#04x)\n", s_DstDev, s_DstDev);
-	Pause();
+    char name[50];
+    printf("\nInit NAS SrcID & DstID \n");
+    snprintf(name, sizeof(name), "%s", __FUNCTION__);
+    get_src_dst_id(name, &s_SrcDev, &s_DstDev);
+    printf("\nPlease confirm your input\n");
+    printf("s_SrcDev=%d\t(%#04x)\n", s_SrcDev, s_SrcDev);
+    printf("s_DstDev=%d\t(%#04x)\n", s_DstDev, s_DstDev);
+    Pause();
 }
 
 
@@ -2068,7 +1613,7 @@ unsigned int get_dst_U32(const char *name, const char *prmpt, int min, int max)
 {
     char buff[11];          // ´æ·ÅÊäÈë×Ö·û
     unsigned int dst;
-	printf("%s", name);
+    printf("%s", name);
 
     while (1)
     {
@@ -2080,7 +1625,7 @@ unsigned int get_dst_U32(const char *name, const char *prmpt, int min, int max)
                 break;
             }
             printf("\nDst val not in range, try again!!! \n\n");
-            
+
         }
     }
     return dst;
@@ -2106,7 +1651,7 @@ int get_Packet_len(const char *name, const char *prmpt)
                 break;
             }
             printf("\nthe id is not in range, try again!!! \n\n");
-            
+
         }
     }
     return dst;
@@ -2118,9 +1663,9 @@ int get_Packet_len(const char *name, const char *prmpt)
 void SetGroupID()
 {
     unsigned int dst;
-	char name[200];
-	printf("\nInit SMS outband Group ID\n");
-	snprintf(name, sizeof(name), "Fun:[%s], %s", __FUNCTION__, "Input the [Group] ID (0~16777215) to test...\n");
+    char name[200];
+    printf("\nInit SMS outband Group ID\n");
+    snprintf(name, sizeof(name), "Fun:[%s], %s", __FUNCTION__, "Input the [Group] ID (0~16777215) to test...\n");
     dst = get_dst_U32(name, "Entry Group ID>", 0, 16777215);
     dst = U32Change2BigEndian(dst) >> 8;
     s_GroupID[0] = ((unsigned char *)&dst)[0];
@@ -2130,21 +1675,21 @@ void SetGroupID()
     printf("s_GroupID[0]=%d\t(%#04x)\n", s_GroupID[0], s_GroupID[0]);
     printf("s_GroupID[1]=%d\t(%#04x)\n", s_GroupID[1], s_GroupID[1]);
     printf("s_GroupID[2]=%d\t(%#04x)\n", s_GroupID[2], s_GroupID[2]);
-	Pause();
+    Pause();
 }
 
 
 void SetMsgLen()
-{    
-	char name[200];
-	printf("\nInit SMS len\n");
-	snprintf(name, sizeof(name), "[%s], %s", __FUNCTION__, "please input [SMS len] (0~100) to test...\n");
+{
+    char name[200];
+    printf("\nInit SMS len\n");
+    snprintf(name, sizeof(name), "[%s], %s", __FUNCTION__, "please input [SMS len] (0~100) to test...\n");
     s_Message_len = get_dst_U32(name, "Entry len", 0, 100);
-	printf("\nPlease confirm your input\n");
-	printf("s_Message_len=%d\t(%#04x)\n", s_Message_len, s_Message_len);
-	Pause();
+    printf("\nPlease confirm your input\n");
+    printf("s_Message_len=%d\t(%#04x)\n", s_Message_len, s_Message_len);
+    Pause();
 }
-    
+
 
 
 // Ñ¹Á¦²âÊÔÓÃ
@@ -2152,7 +1697,6 @@ void *PressODPDataTask(void * p)
 {
 
     int index, item;
-    
     while (1)
     {
         item = GetRandDigit() % ITEM_MAX;
@@ -2166,7 +1710,6 @@ void *PressODPDataTask(void * p)
             }
         }
     }
-
     pthread_exit(NULL);
 }
 
@@ -2361,22 +1904,6 @@ void VoiceCc2cclSend(int len,  int format)
 
 
 
-
-// -vV
-void TestVoiceCc2ccl()
-{
-    int format, len;
-    format = VoiceCc2cclFormatGet();  // »ñÈ¡ÓïÒô°ü¸ñÊ½
-    len = VoiceCc2cclLenGet();        // »ñÈ¡ÓïÒô°ü³¤¶È
-    SetVoiceID();                     // »ñÈ¡Ô´µØÖ·ºÍÄ¿µÄµØÖ·
-    VoiceCc2cclPptOn();
-    VoiceCc2cclSend(len, format);
-    VoiceCc2cclPptOff();
-
-}
-
-
-
 int DataCc2CclItemGet()
 {
     int item;
@@ -2385,7 +1912,7 @@ int DataCc2CclItemGet()
     snprintf(name, sizeof(name), "%s", __FUNCTION__);
     while (1)
     {
-        printf("\n\nData test items as follows\n\n\
+printf("\n\nData test items as follows\n\n\
 \t0 - MS Remote Kill\n\
 \t1 - Ms Enable\n\
 \t2 - Ms Gps Report\n\
@@ -2397,16 +1924,17 @@ int DataCc2CclItemGet()
 \t8 - Ms Short Message\n\
 \nPlease press the 0 ~ 8 to select...\n");
 
-
         item = get_value_u32(name, "Entry Item>", &len);
-        if ((item >=0) && (item <=8))
+        if ((item >=0 ) && (item <= 8))
         {
+            Pause();
             return item;
         }
         else if (item > 8)
         {
             printf("\nThere is no this option, try again ...\n");
             Pause();
+
         }
     }
 }
@@ -2431,14 +1959,7 @@ void DataCc2CclIStart(int item)
 
 
 
- 
-int TestDataCc2ccl()
-{
-	int item;
-    item = DataCc2CclItemGet();
-    DataCc2CclIStart(item);
-    return 0;
-}
+
 
 
 
@@ -2469,7 +1990,8 @@ void VoiceDdl2CclData(unsigned char DataType)
     memset(ptCclData, 0, sizeof(DLL_CCL_UL_T));
     ptCclData->MsgType  = DI_MSG_DATA;
     ptCclData->FrmType  = FT_VOICE_NO;
-    ptCclData->DataType = DataType;
+//    ptCclData->DataType = DataType;
+    ptCclData->DataType = CT_LC_HEADER;
     ptCclData->DataLen  = FLC_LEN;
     ptCclData->SrcId[0] = 0X00;
     ptCclData->SrcId[1] = 0X03;
@@ -2488,7 +2010,7 @@ void VoiceDdl2CclData(unsigned char DataType)
 
 
 
-void VoiceDdl2CclSend(int len)
+void VoiceDdl2CclSend(int len, int format)
 {
     FILE *fp;
     int i, ret;
@@ -2497,8 +2019,7 @@ void VoiceDdl2CclSend(int len)
     CACHE_T tCache;
     CACHE_T *pCache = &tCache;
 
-
-    const char *pVoiceFileName = "AMBE_Test.ap";
+    const char *pVoiceFileName = ((format == AMBE_FORMAT) ? AMBE_FILE_NAME : NVOC_FILE_NAME);
 
     // 1-ÏÈÅÐ¶ÏÎÄ¼þÊÇ·ñ´æÔÚ
     if ((ret = access(pVoiceFileName, F_OK)) < 0)
@@ -2588,7 +2109,6 @@ int VoiceDdl2CclLenGet()
     char name[50];
     unsigned int len;
     snprintf(name, sizeof(name), "%s", __FUNCTION__);
-
     while (1)
     {
         printf("please input the len (0~1000)to test...\n");
@@ -2603,41 +2123,134 @@ int VoiceDdl2CclLenGet()
 
 
 
-void TestVoiceDll2ccl()
+
+
+
+
+
+
+// GPS
+void PrintFormatGpsInfo(SMS_INFO_S *SmsInfo)
 {
-    int FrameLen;
-    printf("\n\n[%s:%d]\n\n", __FUNCTION__, __LINE__);
-    FrameLen = VoiceDdl2CclLenGet();
-    VoiceDdl2CclData(CT_LC_HEADER);
-    VoiceDdl2CclSend(FrameLen);
-    VoiceDdl2CclData(CT_LC_TERMINATOR);
+    GPS_DATA_S GpsData;
+    char chTmp[16] = {0}, chNMin[32] = {0}, chEMin[32] = {0}, chNDeg[32] = {0}, chEDeg[32] = {0};
+    double dNs, dEw;
+    memset(chNDeg, ' ', 32);
+    memset(chEDeg, ' ', 32);
+    memcpy(GpsData.DeviceID, SmsInfo->SmsData, 4);
+    memcpy(GpsData.GpsUnion.Data, &SmsInfo->SmsData[4], 8);
+    memcpy(GpsData.DateTime, &SmsInfo->SmsData[12], 14);
+    memset(SmsInfo->SmsData, 0x00, 512);
+    sprintf(chNMin, "%d.%d", GpsData.GpsUnion.Data_bit.Nminmm, GpsData.GpsUnion.Data_bit.Nminf);
+    sprintf(chEMin, "%d.%d", GpsData.GpsUnion.Data_bit.Eminmm, GpsData.GpsUnion.Data_bit.Eminf);
+    dNs = GpsData.GpsUnion.Data_bit.Ndeg + atof(chNMin) / 60.0;
+    dEw = GpsData.GpsUnion.Data_bit.Edeg + atof(chEMin) / 60.0;
+    sprintf(chNDeg, "%f", dNs);
+    sprintf(chEDeg, "%f", dEw);
+    printf("NS: %s\n", chNDeg);
+    printf("EW: %s\n", chEDeg);
+    printf("GpsData.Ns=%d, GpsData.Ndeg=%d, GpsData.Nminmm=%d, GpsData.Nminf=%d\n", GpsData.GpsUnion.Data_bit.Ns, GpsData.GpsUnion.Data_bit.Ndeg, GpsData.GpsUnion.Data_bit.Nminmm, GpsData.GpsUnion.Data_bit.Nminf);
+    printf("GpsData.Ew=%d, GpsData.Edeg=%d, GpsData.Eminmm=%d, GpsData.Eminf=%d\n", GpsData.GpsUnion.Data_bit.Ew, GpsData.GpsUnion.Data_bit.Edeg, GpsData.GpsUnion.Data_bit.Eminmm, GpsData.GpsUnion.Data_bit.Eminf);
+    memcpy(SmsInfo->SmsData, GpsData.DeviceID, 4);
+    if (GpsData.GpsUnion.Data_bit.Ns == 0)
+    {
+        SmsInfo->SmsData[4] = 'S';
+    }
+    else
+    {
+        SmsInfo->SmsData[4] = 'N';
+    }
+    sprintf(chTmp, "%02d%02d.%04d", GpsData.GpsUnion.Data_bit.Ndeg, GpsData.GpsUnion.Data_bit.Nminmm, GpsData.GpsUnion.Data_bit.Nminf);
+    printf("Ndeg: %s\n", chTmp);
+    memcpy(&SmsInfo->SmsData[5], chNDeg, 9);
+    if (GpsData.GpsUnion.Data_bit.Ew == 0)
+    {
+        SmsInfo->SmsData[14] = 'E';
+    }
+    else
+    {
+        SmsInfo->SmsData[14] = 'W';
+    }
+    sprintf(chTmp, "%03d%02d.%04d", GpsData.GpsUnion.Data_bit.Edeg, GpsData.GpsUnion.Data_bit.Eminmm, GpsData.GpsUnion.Data_bit.Eminf);
+    printf("Edeg: %s\n", chTmp);
+    memcpy(&SmsInfo->SmsData[15], chEDeg, 10);
+    memcpy(&SmsInfo->SmsData[35], GpsData.DateTime, 14);
+    SmsInfo->ValidLength = 49;  //4+31+14
+//  printf("@@@@@@@@Wireless_Bridge: GPS Info is %s\n", SmsInfo->SmsData);
 }
 
 
+#if 0
 
 
-
-
-/*
- * Ñ¹Á¦²âÊÔ
+/**
+ * @enum     _CENTER _SIG_TYPE_EN
+ * @brief  ½ÓÈëµ¥ÔªÓëÖÐÐÄÐÅÁîÀàÐÍ
  */
-void TestPress()
+typedef  enum  _INF_SIG_TYPE_EN
 {
-    SetVoiceID();		// ÊÖ¶¯ÉèÖÃÔ´ID£¬Ä¿µÄID    
-    SetGroupID();   	// ÉèÖÃ×éID
-    SetSrcDstID();  	// Ô´ID&Ä¿µÄID
-    SetMsgLen();    	// ÉèÖÃ¶ÌÐÅµÄ³¤¶È
-    PressVoiceTaskCreate();
-    PressDataTaskCreate();
-}
+    SIG_PTT_CMD         =0X000a,                    //PTT ÃüÁî ÐÅÁî
+    SIG_PTT_ON_ACK      =0x000b,                    //PTT  ON »Ø¸´ ÐÅÁî
+    SIG_SMS_SEND        =0x000e,                    //¶ÌÏûÏ¢ÃüÁî
+    SIG_SMS_ACK         =0x0014,                    //¶ÌÏûÏ¢»Ø¸´ÐÅÁî
+    SIG_PTT_OFF_ACK     =0x0015 ,                   //PTT  OFF»Ø¸´ ÐÅÁî
+}INF_SIG_TYPE_EN;
 
+
+
+
+typedef void (*pSMS_CALL)(SMS_INFO_S *ptSmsInfo);
+typedef struct _DATA_INFO_T
+{
+    unsigned short TypeFlag;
+    const char *TypeStr;
+    pSMS_CALL  pSmsFun;
+} DATA_INFO_T;
+
+DATA_INFO_T tSigType[] = {
+    {SIG_PTT_CMD            ,   "sig_ptt_cmd"           },
+    {SIG_PTT_ON_ACK         ,   "sig_ptt_on_ack"        },
+    {SIG_SMS_SEND           ,   "sig_sms_send"          },
+    {SIG_SMS_ACK            ,   "sig_sms_ack"           },
+    {SIG_PTT_OFF_ACK        ,   "sig_ptt_off_ack"       },
+};
+
+DATA_INFO_T tSmsType[] = {
+    {MESSAGE_PRIVATE_CALL   ,  "message_private_cal"    },
+    {MESSAGE_GROUP_CALL     ,  "message_group_call"     },
+    {STATUS_PRIVATE_CALL    ,  "status_private_call"    },
+    {STATUS_GROUP_CALL      ,  "status_group_call"      },
+    {STUN_REQ_MS            ,  "stun_req_ms"            },
+    {STUN_REQ_NAS           ,  "stun_req_nas"           },
+    {KILL_REQ_NAS           ,  "kill_req_nas"           },
+    {GPS_REPORT_MS          ,  "gps_report_ms"          },
+    {GPS_REPORT_NAS         ,  "gps_report_nas"         },
+    {REVIVE_REQ_NAS         ,  "revive_req_nas"         },
+    {REVIVE_REQ_MS          ,  "revive_req_ms"          },
+    {NEIGHBOR_QUERY         ,  "neighbor_query"         },
+    {NEIGHBOR_QUERY_ACK     ,  "neighbor_query_ack"     },
+    {GPS_REPORT_MS_ACK      ,  "gps_report_ms_ack"      },
+    {GPS_REPORT_NAS_ACK     ,  "gps_report_nas_ack"     },
+    {STUN_REQ_MS_ACK        ,  "stun_req_ms_ack"        },
+    {STUN_REQ_NAS_ACK       ,  "stun_req_nas_ack"       },
+    {KILL_REQ_NAS_ACK       ,  "kill_req_nas_ack"       },
+    {REVIVE_REQ_NAS_ACK     ,  "revive_req_nas_ack"     },
+    {REVIVE_REQ_MS_ACK      ,  "revive_req_ms_ack"      },
+    {NAS_NEAR_REPORT        ,  "nas_near_report"        },
+    {VARIANCE_HRESHOLD      ,  "variance_hreshold"      },
+    {DISCON_ALARM           ,  "discon_alarm"           },
+    {MS_ALARM               ,  "ms_alarm"               },
+    {DISCON_NAS_ALARM_CLEAR ,  "discon_nas_alarm_clear" },
+    {MS_ALARM_CLEAR         ,  "ms_alarm_clear"         },
+    {DSP_PRINT_LOG          ,  "dsp_print_log"          },
+};
 
 
 
 void *TestDataCheckTask(void * p)
 {
     int ret;
-    int i;
+    unsigned short i;
     CENTER_CMD_SHARE_HEAD *pHead;
     ssize_t count;
     fd_set Fdsr;
@@ -2676,17 +2289,21 @@ void *TestDataCheckTask(void * p)
             count = recvfrom(s_CCsigSocket, RecvBuf, sizeof(RecvBuf), 0, (struct sockaddr *)(&in_addr), &SinSize);
             if (count < 0)
             {
-//				printf("\n\n[%s:%d]\n\n", __FUNCTION__, __LINE__);
                 continue;
             }
         }
 
-// 		½âÎö»º´æ
+//      ½âÎö»º´æ
+        printf("\n\n==================CHECK CMD=======================\n");
         pHead = (CENTER_CMD_SHARE_HEAD *)RecvBuf;
-        printf("pHead->SigHead=%#06x\n",     pHead->SigHead);
-        printf("pHead->SigType=%#06x\n",     pHead->SigType);
-        printf("pHead->Datalength=%#06x\n",  pHead->Datalength);
-        printf("pHead->SourceID=%#06x\n",    pHead->SourceID);
+
+        for (i = 0; i < sizeof(tSigType)/sizeof(tSigType[0]) ;i++)
+        {
+            if (pHead->SigType == tSigType[i].TypeFlag)
+            {
+                printf("pHead->SigType=%d(%#06x)[%s]\n", pHead->SigType, pHead->SigType, tSigType[i].TypeStr);
+            }
+        }
 
 
         if ((RecvBuf[0] == 0x13) && (RecvBuf[1] == 0xec))       // ÐÅÁîÍ·½âÎö
@@ -2717,73 +2334,69 @@ void *TestDataCheckTask(void * p)
             if ((RecvBuf[2] == 0x0e) && (RecvBuf[3] == 0x00))   //SMS_INFO
             {
 
-                printf("\n\n@@[%s:%d]\n\n", __FUNCTION__, __LINE__);
                 memcpy(&SmsInfo, RecvBuf, sizeof(SMS_INFO_S));
+                for (i = 0; i < sizeof(tSmsType)/sizeof(tSmsType[0]); i++)
+                {
+                    if (SmsInfo.SmsType == tSmsType[i].TypeFlag)
+                    {
+                        printf("SmsInfo.SmsType=%d(%#04x)[%s]\n", SmsInfo.SmsType, SmsInfo.SmsType, tSmsType[i].TypeStr);
+                    }
+                }
+
                 if (SmsInfo.SmsType == MESSAGE_GROUP_CALL)
                 {
-                    printf("\n\n@@[%s:%d]\n\n", __FUNCTION__, __LINE__);
                     memcpy(DataExch, SmsInfo.SenderNum, 3);
-//                    memset(SmsInfo.SenderNum, 0x00, 30);
+                    memset(SmsInfo.SenderNum, 0x00, 30);
                     // µßµ¹Ë³Ðò
                     ExchTmp     = DataExch[0];
                     DataExch[0] = DataExch[2];
                     DataExch[2] = ExchTmp;
                     memcpy(&nSenderNum, DataExch, 3);
                     sprintf((char *)SmsInfo.SenderNum, "%d", nSenderNum);
-
-                    memcpy(DataExch, SmsInfo.ReceiverNum, 3);                    
-//                    memset(SmsInfo.ReceiverNum, 0x00, 30);
+                    memcpy(DataExch, SmsInfo.ReceiverNum, 3);
+                    memset(SmsInfo.ReceiverNum, 0x00, 30);
                     ExchTmp = DataExch[0];
                     DataExch[0] = DataExch[2];
                     DataExch[2] = ExchTmp;
                     memcpy(&nRecvNum, DataExch, 3);
                     sprintf((char *)SmsInfo.ReceiverNum, "%d", nRecvNum);
-                    // ´òÓ¡ÖÕ¶Ë ·¢ÉäºÍ½ÓÊÕ¶Ë
-                    printf("Sender[0]=%d\t(%#04x)\n",     SmsInfo.SenderNum[0], SmsInfo.SenderNum[0]);
-                    printf("Sender[1]=%d\t(%#04x)\n",     SmsInfo.SenderNum[1], SmsInfo.SenderNum[1]);
-                    printf("Sender[2]=%d\t(%#04x)\n\n",   SmsInfo.SenderNum[2], SmsInfo.SenderNum[2]);
-                    printf("Receiver[0]=%d\t(%#04x)\n",   SmsInfo.ReceiverNum[0], SmsInfo.ReceiverNum[0]);
-                    printf("Receiver[1]=%d\t(%#04x)\n",   SmsInfo.ReceiverNum[1], SmsInfo.ReceiverNum[1]);
-                    printf("Receiver[2]=%d\t(%#04x)\n",   SmsInfo.ReceiverNum[2], SmsInfo.ReceiverNum[2]);
                     // ´òÓ¡³¤¶È
-                    printf("ValidLength=(%d)\n", SmsInfo.ValidLength);
-                    
+                    printf("Src(%s) ---------------------> Dst(%s)\n", SmsInfo.SenderNum, SmsInfo.ReceiverNum);
+                    printf("MsgValidLen=(%d), MsgCharNum=(%d)\n", SmsInfo.ValidLength, SmsInfo.ValidLength/2);
+                    printf("Msginfo:\n\t");
                     for (i = 0; i < SmsInfo.ValidLength; i++)
                     {
                         printf("%c ", SmsInfo.SmsData[i]);
                     }
-                    printf("\n\n");                    
+                    printf("\n\n");
+
+
                 }
                 else if ((SmsInfo.SmsType == GPS_REPORT_MS_ACK) || (SmsInfo.SmsType == GPS_REPORT_NAS_ACK))
                 {
-					printf("\n\n@@[%s:%d]\n\n", __FUNCTION__, __LINE__);
+
+
                     if (SmsInfo.SmsType == GPS_REPORT_NAS_ACK)
                     {
-						printf("\n\nNAS@@[%s:%d]\n\n", __FUNCTION__, __LINE__);
                         memcpy(&nSenderNum, SmsInfo.SenderNum, 1);
-//                        memset(SmsInfo.SenderNum, 0x00, 30);
                         sprintf((char *)SmsInfo.SenderNum, "%d", nSenderNum);
-
                         memcpy(&nRecvNum, SmsInfo.ReceiverNum, 1);
-//                        memset(SmsInfo.ReceiverNum, 0x00, 30);
                         sprintf((char *)SmsInfo.ReceiverNum, "%d", nRecvNum);
-                        printf("Sender[0]=%d\t(%#04x)\n",     SmsInfo.SenderNum[0], SmsInfo.SenderNum[0]);                       
-                        printf("Receiver[0]=%d\t(%#04x)\n",   SmsInfo.ReceiverNum[0], SmsInfo.ReceiverNum[0]);
-
+                        printf("\n\nNasID(%d) response to (%d)\n\n", nSenderNum, nRecvNum);
+                        printf("NAS GPS info:\n");
+                        PrintFormatGpsInfo(&SmsInfo);
                     }
-					printf("\n\n@@[%s:%d]\n\n", __FUNCTION__, __LINE__);
+
                     if (SmsInfo.SmsType == GPS_REPORT_MS_ACK)
                     {
-						printf("\n\nMS@@[%s:%d]\n\n", __FUNCTION__, __LINE__);
+
                         memcpy(DataExch, SmsInfo.SenderNum, 3);
                         memset(SmsInfo.SenderNum, 0x00, 30);
                         ExchTmp = DataExch[0];
                         DataExch[0] = DataExch[2];
                         DataExch[2] = ExchTmp;
                         memcpy(&nSenderNum, DataExch, 3);
-//						printf("\n\nMS@@[%s:%d]nSenderNum=%d(%#010x)\n\n", __FUNCTION__, __LINE__, nSenderNum, nSenderNum);
                         sprintf((char *)SmsInfo.SenderNum, "%d", nSenderNum);
-						printf("\n\nMS@@[%s:%d]SmsInfo.SenderNum=%s\n\n", __FUNCTION__, __LINE__, SmsInfo.SenderNum);
 
                         memcpy(DataExch, SmsInfo.ReceiverNum, 3);
                         memset(SmsInfo.ReceiverNum, 0x00, 30);
@@ -2791,42 +2404,354 @@ void *TestDataCheckTask(void * p)
                         DataExch[0] = DataExch[2];
                         DataExch[2] = ExchTmp;
                         memcpy(&nRecvNum, DataExch, 3);
-//						printf("\n\nMS@@[%s:%d]nRecvNum=%d(%#010x)\n\n", __FUNCTION__, __LINE__, nRecvNum, nRecvNum);
+
                         sprintf((char *)SmsInfo.ReceiverNum, "%d", nRecvNum);
-						printf("\n\nMS@@[%s:%d]nRecvNum=%s\n\n", __FUNCTION__, __LINE__, SmsInfo.ReceiverNum);
-                        // ´òÓ¡ÖÕ¶Ë ·¢ÉäºÍ½ÓÊÕ¶Ë
-//                        printf("Sender[0]=%d\t(%#04x)\n",     SmsInfo.SenderNum[0], SmsInfo.SenderNum[0]);
-//                        printf("Sender[1]=%d\t(%#04x)\n",     SmsInfo.SenderNum[1], SmsInfo.SenderNum[1]);
-//                        printf("Sender[2]=%d\t(%#04x)\n\n",   SmsInfo.SenderNum[2], SmsInfo.SenderNum[2]);
-//                        printf("Receiver[0]=%d\t(%#04x)\n",   SmsInfo.ReceiverNum[0], SmsInfo.ReceiverNum[0]);
-//                        printf("Receiver[1]=%d\t(%#04x)\n",   SmsInfo.ReceiverNum[1], SmsInfo.ReceiverNum[1]);
-//                        printf("Receiver[2]=%d\t(%#04x)\n",   SmsInfo.ReceiverNum[2], SmsInfo.ReceiverNum[2]);
-
+                        printf("Src(%s) ---------------> Dst(%s)\n", SmsInfo.SenderNum, SmsInfo.ReceiverNum);
+                        printf("MsgValidLen=(%d)\n", SmsInfo.ValidLength);
+                        printf("MS GPS info:\n");
+                        PrintFormatGpsInfo(&SmsInfo);
                     }
-
-                    // ´òÓ¡³¤¶È
-                    printf("ValidLength=(%d)\n", SmsInfo.ValidLength);
-					printf("SmsData:\n");
-                    for (i = 0; i < SmsInfo.ValidLength; i++)
-                    {
-						printf("\t%c(%d-%#04x)\n", SmsInfo.SmsData[i], SmsInfo.SmsData[i], SmsInfo.SmsData[i]);
-                    }
-                    printf("\n\n");                    
 
 //                  SendMainCtrlGPSInfo(&SmsInfo);
 //                  SendLogInfo(DEBUG, "Wireless_Bridge: Recv GPS_Info From Wireless\n");
                 }
+                else if (  (SmsInfo.SmsType == NEIGHBOR_QUERY_ACK) \
+                        || (SmsInfo.SmsType == STUN_REQ_MS_ACK)    \
+                        || (SmsInfo.SmsType == STUN_REQ_NAS_ACK)   \
+                        || (SmsInfo.SmsType == KILL_REQ_NAS_ACK)   \
+                        || (SmsInfo.SmsType == REVIVE_REQ_NAS_ACK) \
+                        || (SmsInfo.SmsType == REVIVE_REQ_MS_ACK)  \
+                        || (SmsInfo.SmsType == STUN_REQ_NAS)       \
+                        || (SmsInfo.SmsType == KILL_REQ_NAS)       \
+                        || (SmsInfo.SmsType == REVIVE_REQ_NAS)     \
+                        )
+                {
+                    if ((SmsInfo.SmsType == STUN_REQ_MS_ACK) || (SmsInfo.SmsType == REVIVE_REQ_MS_ACK))
+                    {
+                        memcpy(DataExch, SmsInfo.SenderNum, 3);
+                        memset(SmsInfo.SenderNum, 0x00, 30);
+                        ExchTmp = DataExch[0];
+                        DataExch[0] = DataExch[2];
+                        DataExch[2] = ExchTmp;
+                        memcpy(&nSenderNum, DataExch, 3);
+                        sprintf((char *)SmsInfo.SenderNum, "%d", nSenderNum);
+                        memcpy(DataExch, SmsInfo.ReceiverNum, 3);
+                        memset(SmsInfo.ReceiverNum, 0x00, 30);
+                        ExchTmp = DataExch[0];
+                        DataExch[0] = DataExch[2];
+                        DataExch[2] = ExchTmp;
+                        memcpy(&nRecvNum, DataExch, 3);
+                        sprintf((char *)SmsInfo.ReceiverNum, "%d", nRecvNum);
+                    }
+
+                    if ((SmsInfo.SmsType == NEIGHBOR_QUERY_ACK) || (SmsInfo.SmsType == STUN_REQ_NAS_ACK) || (SmsInfo.SmsType == KILL_REQ_NAS_ACK) || (SmsInfo.SmsType == REVIVE_REQ_NAS_ACK))
+                    {
+                        memcpy(&nSenderNum, SmsInfo.SenderNum, 1);
+                        memset(SmsInfo.SenderNum, 0x00, 30);
+                        sprintf((char *)SmsInfo.SenderNum, "%d", nSenderNum);
+
+                        memcpy(&nRecvNum, SmsInfo.ReceiverNum, 1);
+                        memset(SmsInfo.ReceiverNum, 0x00, 30);
+                        sprintf((char *)SmsInfo.ReceiverNum, "%d", nRecvNum);
+                    }
+
+
+                    if ((SmsInfo.SmsType == STUN_REQ_NAS) || (SmsInfo.SmsType == KILL_REQ_NAS) || (SmsInfo.SmsType == REVIVE_REQ_NAS))  //é¥æ™•é¥æ¯™æ¿€æ´»åŸºç«™
+                    {
+                        memcpy(&nSenderNum, SmsInfo.SenderNum, 1);
+                        memset(SmsInfo.SenderNum, 0x00, 30);
+                        sprintf((char *)SmsInfo.SenderNum, "%d", nSenderNum);
+
+                        memcpy(&nRecvNum, SmsInfo.ReceiverNum, 1);
+                        memset(SmsInfo.ReceiverNum, 0x00, 30);
+                        sprintf((char *)SmsInfo.ReceiverNum, "%d", nRecvNum);
+                    }
+
+
+                }
+
             }
             if ((RecvBuf[2] == 0x14) && (RecvBuf[3] == 0x00))   //SMS_ACK
             {
                 printf("\n\n[%s:%d]\n\n", __FUNCTION__, __LINE__);
             }
-            
+
         }
     }
-    
+
     pthread_exit(NULL);
 }
+
+
+#else
+
+/**
+ * @enum     _CENTER _SIG_TYPE_EN
+ * @brief  ½ÓÈëµ¥ÔªÓëÖÐÐÄÐÅÁîÀàÐÍ
+ */
+typedef  enum  _INF_SIG_TYPE_EN
+{
+    SIG_PTT_CMD         =0X000a,                    //PTT ÃüÁî ÐÅÁî
+    SIG_PTT_ON_ACK      =0x000b,                    //PTT  ON »Ø¸´ ÐÅÁî
+    SIG_SMS_SEND        =0x000e,                    //¶ÌÏûÏ¢ÃüÁî
+    SIG_SMS_ACK         =0x0014,                    //¶ÌÏûÏ¢»Ø¸´ÐÅÁî
+    SIG_PTT_OFF_ACK     =0x0015 ,                   //PTT  OFF»Ø¸´ ÐÅÁî
+}INF_SIG_TYPE_EN;
+
+
+void get_id_cc(unsigned char *buf, int len)
+{
+
+    unsigned char ExchTmp;
+    unsigned char DataExch[MS_ID_SIZE];
+    unsigned int  uNum = 0;
+
+    if (len == MS_ID_SIZE)
+    {
+        memcpy(DataExch, buf, MS_ID_SIZE);
+        memset(buf, 0x00, MAX_CALL_NUM);
+        ExchTmp = DataExch[0];
+        DataExch[0] = DataExch[2];
+        DataExch[2] = ExchTmp;
+        memcpy(&uNum, DataExch, MS_ID_SIZE);
+        sprintf((char *)buf, "%d", uNum);
+    }
+    else if (len == NAS_ID_SIZE)
+    {
+        memcpy(&uNum, buf, NAS_ID_SIZE);
+        memset(buf, 0x00, MAX_CALL_NUM);
+        sprintf((char *)buf, "%d", uNum);
+    }
+    else
+    {
+        printf("[%s:%d]len err", __FUNCTION__, __LINE__);
+    }
+}
+
+
+
+void SMS_MessageGroupCall(SMS_INFO_S *ptSmsInfo)
+{
+    int i;
+    printf("In Fun:[%s]\n", __FUNCTION__);
+    get_id_cc(ptSmsInfo->SenderNum,   GROUP_ID_SIZE);
+    get_id_cc(ptSmsInfo->ReceiverNum, GROUP_ID_SIZE);
+    printf("Receive:\n\tSrc(%s) ---------------------> Dst(%s)\n", ptSmsInfo->SenderNum, ptSmsInfo->ReceiverNum);
+    printf("Short Msg info:\n\t");
+    for (i = 0; i < ptSmsInfo->ValidLength; i++)
+    {
+        printf("%c ", ptSmsInfo->SmsData[i]);
+    }
+    printf("\n\n");
+}
+
+void SMS_GpsReportMsAck(SMS_INFO_S *ptSmsInfo)
+{
+    printf("In Fun: [%s]\n", __FUNCTION__);
+    get_id_cc(ptSmsInfo->SenderNum, MS_ID_SIZE);
+    get_id_cc(ptSmsInfo->ReceiverNum, MS_ID_SIZE);
+    printf("Receive:\n\tSrc(%s) ---------------------> Dst(%s)\n", ptSmsInfo->SenderNum, ptSmsInfo->ReceiverNum);
+    PrintFormatGpsInfo(ptSmsInfo);
+    printf("\n\n");
+}
+
+void SMS_GpsReportNasAck(SMS_INFO_S *ptSmsInfo)
+{
+    printf("In Fun: [%s]\n", __FUNCTION__);
+    get_id_cc(ptSmsInfo->SenderNum, NAS_ID_SIZE);
+    get_id_cc(ptSmsInfo->ReceiverNum, NAS_ID_SIZE);
+    printf("Receive:\n\tSrc(%s) ---------------------> Dst(%s)\n", ptSmsInfo->SenderNum, ptSmsInfo->ReceiverNum);
+    PrintFormatGpsInfo(ptSmsInfo);
+    printf("\n\n");
+}
+
+void SMS_MsCommonCall(SMS_INFO_S *ptSmsInfo)
+{
+    get_id_cc(ptSmsInfo->SenderNum, MS_ID_SIZE);
+    get_id_cc(ptSmsInfo->ReceiverNum, MS_ID_SIZE);
+    printf("Receive:\n\tSrc(%s) ---------------------> Dst(%s)\n", ptSmsInfo->SenderNum, ptSmsInfo->ReceiverNum);
+    printf("\n\n");
+}
+
+void SMS_NasCommonCall(SMS_INFO_S *ptSmsInfo)
+{
+    get_id_cc(ptSmsInfo->SenderNum, NAS_ID_SIZE);
+    get_id_cc(ptSmsInfo->ReceiverNum, NAS_ID_SIZE);
+    printf("Receive:\n\tSrc(%s) ---------------------> Dst(%s)\n", ptSmsInfo->SenderNum, ptSmsInfo->ReceiverNum);
+    printf("\n\n");
+}
+
+
+typedef void (*pSMS_CALL)(SMS_INFO_S *ptSmsInfo);
+typedef struct _DATA_INFO_T
+{
+    unsigned short TypeFlag;
+    const char *TypeStr;
+    pSMS_CALL  pSmsFun;
+} DATA_INFO_T;
+
+
+
+DATA_INFO_T tSigType[] = {
+    {SIG_PTT_CMD            ,   "sig_ptt_cmd"           },
+    {SIG_PTT_ON_ACK         ,   "sig_ptt_on_ack"        },
+    {SIG_SMS_SEND           ,   "sig_sms_send"          },
+    {SIG_SMS_ACK            ,   "sig_sms_ack"           },
+    {SIG_PTT_OFF_ACK        ,   "sig_ptt_off_ack"       },
+};
+
+DATA_INFO_T tSmsType[] = {
+    {MESSAGE_PRIVATE_CALL   ,  "message_private_cal"    , NULL},
+    {MESSAGE_GROUP_CALL     ,  "message_group_call"     , SMS_MessageGroupCall},
+    {STATUS_PRIVATE_CALL    ,  "status_private_call"    , NULL},
+    {STATUS_GROUP_CALL      ,  "status_group_call"      , NULL},
+    {STUN_REQ_MS            ,  "stun_req_ms"            , NULL},
+    {STUN_REQ_NAS           ,  "stun_req_nas"           , SMS_NasCommonCall},
+    {KILL_REQ_NAS           ,  "kill_req_nas"           , SMS_NasCommonCall},
+    {GPS_REPORT_MS          ,  "gps_report_ms"          , NULL},
+    {GPS_REPORT_NAS         ,  "gps_report_nas"         , NULL},
+    {REVIVE_REQ_NAS         ,  "revive_req_nas"         , SMS_NasCommonCall},
+    {REVIVE_REQ_MS          ,  "revive_req_ms"          , NULL},
+    {NEIGHBOR_QUERY         ,  "neighbor_query"         , NULL},
+    {NEIGHBOR_QUERY_ACK     ,  "neighbor_query_ack"     , SMS_NasCommonCall},
+    {GPS_REPORT_MS_ACK      ,  "gps_report_ms_ack"      , SMS_GpsReportMsAck},
+    {GPS_REPORT_NAS_ACK     ,  "gps_report_nas_ack"     , SMS_GpsReportNasAck},
+    {STUN_REQ_MS_ACK        ,  "stun_req_ms_ack"        , SMS_MsCommonCall},
+    {STUN_REQ_NAS_ACK       ,  "stun_req_nas_ack"       , SMS_NasCommonCall},
+    {KILL_REQ_NAS_ACK       ,  "kill_req_nas_ack"       , SMS_NasCommonCall},
+    {REVIVE_REQ_NAS_ACK     ,  "revive_req_nas_ack"     , SMS_NasCommonCall},
+    {REVIVE_REQ_MS_ACK      ,  "revive_req_ms_ack"      , SMS_MsCommonCall},
+    {NAS_NEAR_REPORT        ,  "nas_near_report"        , NULL},
+    {VARIANCE_HRESHOLD      ,  "variance_hreshold"      , NULL},
+    {DISCON_ALARM           ,  "discon_alarm"           , NULL},
+    {MS_ALARM               ,  "ms_alarm"               , NULL},
+    {DISCON_NAS_ALARM_CLEAR ,  "discon_nas_alarm_clear" , NULL},
+    {MS_ALARM_CLEAR         ,  "ms_alarm_clear"         , NULL},
+    {DSP_PRINT_LOG          ,  "dsp_print_log"          , NULL},
+};
+
+
+
+
+
+
+
+
+void *TestDataCheckTask(void * p)
+{
+    int ret;
+    unsigned short i;
+    CENTER_CMD_SHARE_HEAD *pHead;
+    ssize_t count;
+    fd_set Fdsr;
+    struct sockaddr_in in_addr;
+    struct timeval tv;
+    socklen_t SinSize;
+    unsigned char RecvBuf[1024];
+#if 0
+    unsigned char DataExch[3];
+    unsigned char ExchTmp;
+    unsigned int nSenderNum = 0, nRecvNum = 0;
+#endif
+    PTT_CMD_S PttCmd;
+    SMS_INFO_S SmsInfo;
+    IPC_Ccl2ccInit();  // Ccl2cc Ì×½Ó×Ö½ø³ÌÍ¨ÐÅ³õÊ¼»¯
+    bzero(&in_addr, sizeof(struct sockaddr_in));
+    while (1)
+    {
+        FD_ZERO(&Fdsr);
+        FD_SET(s_CCsigSocket, &Fdsr);
+        tv.tv_sec = 5;
+        tv.tv_usec = 0;
+        ret = select(s_CCsigSocket + 1, &Fdsr, NULL, NULL, &tv);
+        if (ret < 0)
+        {
+            printf("ipc ret < 0\n");
+            printf("\n[%s:%d] select ret<0\n", __FUNCTION__, __LINE__);
+            continue;
+        }
+        else if (ret == 0)
+        {
+            continue;
+        }
+
+        if (FD_ISSET(s_CCsigSocket, &Fdsr))
+        {
+            count = recvfrom(s_CCsigSocket, RecvBuf, sizeof(RecvBuf), 0, (struct sockaddr *)(&in_addr), &SinSize);
+            if (count < 0)
+            {
+                continue;
+            }
+        }
+
+        // ½âÎö»º´æ
+        printf("\n\n==================RECEIVE MSG=======================\n");
+        pHead = (CENTER_CMD_SHARE_HEAD *)RecvBuf;
+
+        for (i = 0; i < sizeof(tSigType)/sizeof(tSigType[0]) ;i++)
+        {
+            if (pHead->SigType == tSigType[i].TypeFlag)
+            {
+                printf("pHead->SigType=%d(%#06x)[%s]\n", pHead->SigType, pHead->SigType, tSigType[i].TypeStr);
+            }
+        }
+
+
+        if ((RecvBuf[0] == 0x13) && (RecvBuf[1] == 0xec))       // ÐÅÁîÍ·½âÎö
+        {
+            if ((RecvBuf[2] == 0x0a) && (RecvBuf[3] == 0x00))   //PTT_CMD
+            {
+                memcpy(&PttCmd, RecvBuf, sizeof(PTT_CMD_S));
+                if (PttCmd.PttStat == CMD_ON)   //
+                {
+                    printf("\n\n[%s:%d] Ptt Stat is on \n\n", __FUNCTION__, __LINE__);
+                }
+                else
+                {
+                    printf("\n\n[%s:%d] Ptt Stat is off \n\n", __FUNCTION__, __LINE__);
+                }
+
+            }
+            if ((RecvBuf[2] == 0x0b) && (RecvBuf[3] == 0x00))   //PTT_ACK
+            {
+                printf("\n\n[%s:%d] PTT_ACK  \n\n", __FUNCTION__, __LINE__);
+
+            }
+            if ((RecvBuf[2] == 0x15) && (RecvBuf[3] == 0x00))   //PTT_OFF_ACK
+            {
+                printf("\n\n[%s:%d] PTT_OFF_ACK \n\n", __FUNCTION__, __LINE__);
+
+            }
+            if ((RecvBuf[2] == 0x0e) && (RecvBuf[3] == 0x00))   //SMS_INFO
+            {
+                memcpy(&SmsInfo, RecvBuf, sizeof(SMS_INFO_S));
+                for (i = 0; i < sizeof(tSmsType)/sizeof(tSmsType[0]); i++)
+                {
+                    if (tSmsType[i].TypeFlag ==  SmsInfo.SmsType)
+                    {
+                        printf("prompt:SmsType=%d(%#04x)\nMsg:[%s]\n", SmsInfo.SmsType, SmsInfo.SmsType, tSmsType[i].TypeStr);
+                        if (tSmsType[i].pSmsFun != NULL)
+                        {
+                            tSmsType[i].pSmsFun(&SmsInfo);
+                        }
+                        else
+                        {
+                            printf("[%s:%d] err: no function\n", __FUNCTION__, __LINE__);
+                        }
+                    }
+                }
+            }
+            if ((RecvBuf[2] == 0x14) && (RecvBuf[3] == 0x00))   //SMS_ACK
+            {
+                printf("\n\n[%s:%d] SMS_ACK \n\n", __FUNCTION__, __LINE__);
+            }
+
+        }
+    }
+
+    pthread_exit(NULL);
+}
+#endif
 
 
 void TestDataCheckTaskCreate()
@@ -2844,14 +2769,66 @@ void TestDataCheckTaskCreate()
 
 
 
+
+// Êý¾ÝÏÂÐÐ²âÊÔ
+int TestDataCc2ccl()
+{
+    int item;
+    item = DataCc2CclItemGet();
+    delay(50);      // µÈ´ý½ÓÊÕ½ø³Ì¾ÍÐ÷
+    DataCc2CclIStart(item);
+    return 0;
+}
+
+
+// ÓïÒôÏÂÐÐ²âÊÔ
+void TestVoiceCc2ccl()
+{
+    int format, len;
+    format = VoiceCc2cclFormatGet();  // »ñÈ¡ÓïÒô°ü¸ñÊ½
+    len = VoiceCc2cclLenGet();        // »ñÈ¡ÓïÒô°ü³¤¶È
+    SetVoiceID();                     // »ñÈ¡Ô´µØÖ·ºÍÄ¿µÄµØÖ·
+    VoiceCc2cclPptOn();
+    VoiceCc2cclSend(len, format);
+    VoiceCc2cclPptOff();
+}
+
+
+// ÓïÒôÉÏÐÐ²âÊÔ
+void TestVoiceDll2ccl()
+{
+    int format, FrameLen;
+    format = VoiceCc2cclFormatGet();  // »ñÈ¡ÓïÒô°ü¸ñÊ½
+    FrameLen = VoiceDdl2CclLenGet();
+    SetVoiceID();  // ÓïÒô¹¦ÄÜ-ÊÖ¶¯ÉèÖÃÈ«¾Ö±äÁ¿CallingID, CalledID
+    VoiceDdl2CclData(CT_LC_HEADER);
+    VoiceDdl2CclSend(FrameLen, format);
+    VoiceDdl2CclData(CT_LC_TERMINATOR);
+}
+
+
+/*
+ * Ñ¹Á¦²âÊÔ
+ */
+void TestPress()
+{
+    SetVoiceID();       // ÓïÒô¹¦ÄÜ-ÊÖ¶¯ÉèÖÃÔ´ID£¬Ä¿µÄID
+    SetGroupID();       // ¶ÌÐÅ¹¦ÄÜ-ÉèÖÃ×éID
+    SetSrcDstID();      // Ô´ID&Ä¿µÄID
+    SetMsgLen();        // ÉèÖÃ¶ÌÐÅµÄ³¤¶È
+    PressVoiceTaskCreate();
+    PressDataTaskCreate();
+}
+
+
 /*
  * test options
  */
 int TestOption(int argc, char *argv[])
 {
     int opt;
-    const char *optstring = "vduphVDUPH";
-    s_TestOption = OPTION_FEATURE;       // Ñ¹Á¦OR¹¦ÄÜ²âÊÔÑ¡Ïî
+    const char *optstring = "vduphgVDUPHG";
+
 
     while ((opt = getopt(argc, argv, optstring)) != -1)
     {
@@ -2888,11 +2865,18 @@ int TestOption(int argc, char *argv[])
                 TestDataCc2ccl();
                 break;
             }
+            case 'g':
+            case 'G':
+            {
+                // Êý¾ÝÏÂÐÐ²âÊÔ
+                printf("wait for data from MS or Nas\n\n");
+                TestDataCheckTaskCreate();
+                break;
+            }
             case 'p':
             case 'P':
             {
                 // Ñ¹Á¦²âÊÔ
-                s_TestOption = OPTION_PRESS;
                 TestPress();
                 break;
             }
@@ -2930,7 +2914,7 @@ void TestInit()
 
 void CompileTime()
 {
-	printf("Compile Time: [%s - %s]\n\n\n",  __DATE__, __TIME__);	
+    printf("Compile Time: [%s - %s]\n\n\n",  __DATE__, __TIME__);
 }
 
 
@@ -2944,8 +2928,8 @@ void CompileTime()
 */
 int main(int argc, char *argv[])
 {
-	CompileTime();
-    ProcessNameSet(argv[0]);  // ÉèÖÃ½ø³ÌÃû
+    CompileTime();
+    ProcessNameSave(argv[0]);  // ÉèÖÃ½ø³ÌÃû
 
     if (argc == 1)
     {
@@ -2962,6 +2946,7 @@ int main(int argc, char *argv[])
         printf("\nErr: option is too many...\n");
         exit(EXIT_FAILURE);
     }
+
     printf("\n\n~~go~to~sleep~~\n\n");
     while(1)
     {

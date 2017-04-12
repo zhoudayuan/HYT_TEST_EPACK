@@ -5,7 +5,7 @@
 
 #define u8  unsigned char
 #define u16 unsigned short
-#define u32	unsigned int
+#define u32 unsigned int
 #define u64 unsigned long long
 #define RTP_DATA_SIZE 27
 #define MAX_CALL_NUM 30
@@ -18,14 +18,14 @@
 #define CENTER_HEAD 0xea01
 #define CENTER_TAIL 0xed02
 #define MAX_SMS_LENGTH 512
-#define AMBE_VOICE_LENGTH 27    //ABMEè¯­éŸ³é•¿åº¦
+#define AMBE_VOICE_LENGTH 27    //ABMEÓïÒô³¤¶È
 #define QUEUE_MAX_SIZE 640
 #define FILE_PATH "/root/AMBE_Test.ap"
 #define RECV_WIRELESS_CMD_PORT 10012
 #define RECV_WIRELESS_VOICE_PORT 10010
 #define SEND_WIRELESS_CMD_PORT 10013
 #define SEND_WIRELESS_VOICE_PORT 10011
-#define AMBE_PACK_LENGTH 64 //è¯­éŸ³åŒ…é•¿åº¦
+#define AMBE_PACK_LENGTH 64 //ÓïÒô°ü³¤¶È
 #define CENTER_IP "127.0.0.1"
 //#define CENTER_IP "192.168.66.133"
 //#define CENTER_IP "192.168.66.47"
@@ -76,7 +76,7 @@ enum RTP_FRAME_TYPE
 enum MODULE_TYPE
 {
     TYPE_WIRELESS = 0x00,
-    TYPE_NM	= 0x01,
+    TYPE_NM = 0x01,
     TYPE_INTERCONNECTION = 0x02,
     TYPE_REPETER = 0x03,
     TYPE_POWMANAGE = 0x04,
@@ -138,33 +138,32 @@ enum SIGNALLING_TYPE
 
 
 
-#if 0
+#if 1
 enum SMS_TYPE
 {
-    MESSAGE_PRIVATE_CAL    = 0x00,  //å•å‘¼
-    MESSAGE_GROUP_CALL     = 0x01,  //ç»„å‘¼
-    STATUS_PRIVATE_CALL	   = 0x02,  //çŠ¶æ€å‘¼
-    STATUS_GROUP_CALL	   = 0x03,  //çŠ¶æ€ç»„
+    MESSAGE_PRIVATE_CALL   = 0x00,  //µ¥ºô
+    MESSAGE_GROUP_CALL     = 0x01,  //×éºô
+    STATUS_PRIVATE_CALL    = 0x02,  //×´Ì¬ºô
+    STATUS_GROUP_CALL      = 0x03,  //×´Ì¬×é
 
-    STUN_REQ_MS	           = 0x07,  //é¥æ™•MS
-    STUN_REQ_NAS           = 0x08,  //é¥æ™•NAS
-    KILL_REQ_NAS           = 0x09,  //é¥æ¯™NAS
-    GPS_REPORT_MS	       = 0x0a,  //GPSä¸Šæ‹‰
+    STUN_REQ_MS            = 0x07,  //Ò£ÔÎMS
+    STUN_REQ_NAS           = 0x08,  //Ò£ÔÎNAS
+    KILL_REQ_NAS           = 0x09,  //Ò£±ĞNAS
+    GPS_REPORT_MS          = 0x0a,  //GPSÉÏÀ­
     GPS_REPORT_NAS         = 0x0b,  //
-    REVIVE_REQ_NAS         = 0x0c,  //æ¿€æ´»è¯·æ±‚
+    REVIVE_REQ_NAS         = 0x0c,  //¼¤»îÇëÇó
     REVIVE_REQ_MS          = 0x0d,
-    NEIGHBOR_QUERY         = 0x0e,  //é‚»ç«™ä¿¡æ¯æŸ¥è¯¢
-
-    NEIGHBOR_QUERY_ACK     = 0x20,  //é‚»ç«™ä¿¡æ¯å“åº”
-    GPS_REPORT_MS_ACK      = 0x21,  //å“åº”æ‹‰MS
-    GPS_REPORT_NAS_ACK     = 0x22,  //å“åº”æ‹‰NAS
+    NEIGHBOR_QUERY         = 0x0e,  //ÁÚÕ¾ĞÅÏ¢²éÑ¯
+    NEIGHBOR_QUERY_ACK     = 0x20,  //ÁÚÕ¾ĞÅÏ¢ÏìÓ¦
+    GPS_REPORT_MS_ACK      = 0x21,  //ÏìÓ¦À­MS
+    GPS_REPORT_NAS_ACK     = 0x22,  //ÏìÓ¦À­NAS
     STUN_REQ_MS_ACK        = 0x23,  //
     STUN_REQ_NAS_ACK       = 0x24,
     KILL_REQ_NAS_ACK       = 0x25,
-    REVIVE_REQ_NAS_ACK     = 0x26,  //æ¿€æ´»NASå“åº”
-    REVIVE_REQ_MS_ACK      = 0x27,  //æ¿€æ´»MSå“åº”
+    REVIVE_REQ_NAS_ACK     = 0x26,  //¼¤»îNASÏìÓ¦
+    REVIVE_REQ_MS_ACK      = 0x27,  //¼¤»îMSÏìÓ¦
     NAS_NEAR_REPORT        = 0x28,  //
-    VARIANCE_HRESHOLD      = 0x29,  //æ–¹å·®é—¨é™ï¼Œåœºå¼ºå€¼
+    VARIANCE_HRESHOLD      = 0x29,  //·½²îÃÅÏŞ£¬³¡Ç¿Öµ
 
     //STUN_NAS_REPORT        = 0x30,
     //KILL_NAS_REPORT        = 0x31,
@@ -175,7 +174,7 @@ enum SMS_TYPE
     DISCON_NAS_ALARM_CLEAR = 0x42,
     MS_ALARM_CLEAR         = 0x43,
 
-    DSP_PRINT_LOG          = 0x16,        //DSPæ‰“å°
+    DSP_PRINT_LOG          = 0x16,        //DSP´òÓ¡
 };
 #endif
 
@@ -208,7 +207,7 @@ typedef struct
     u32 Gps;
     u8 CodecFlag;
     u8 FrameFlag;
-    u8 PathNum;			// show which path voice 0xff indicates invalid value, "0" indicates the first path
+    u8 PathNum;         // show which path voice 0xff indicates invalid value, "0" indicates the first path
     u8 PackRate;           // packet rate "20" or "60" milliseconds
     u8 EncryptFlag;
     u8 Reserve[3];
@@ -319,7 +318,7 @@ typedef struct
     u16 Head;
     u8  Type;
     u16 DataLength;
-    u8  Data[MAX_DATA_LENGTH];		//???
+    u8  Data[MAX_DATA_LENGTH];      //???
     u16 Reserved;
     u16 CRC;
     u16 Tail;
@@ -333,14 +332,14 @@ typedef struct
 
 typedef struct SendList
 {
-    u8  SendBuf[512];        //å‘é€ç¼“å†²åŒº
-    u16 DataLen;             //æ•°æ®é•¿åº¦
-    u8  Direction;           //å‘é€æ–¹å‘
-    u16 OverTime;           //è¶…æ—¶è®¡æ•°å™¨
-    u16 SendTimes;          //å‘é€æ¬¡æ•°
-    u32 CallId;             //ç”¨äºåˆ¤æ–­æ˜¯å¦æ˜¯æœ¬èŠ‚ç‚¹çŸ­å›å¤
-    u8 RecvAck;             //æ”¶åˆ°Ackæ ‡è¯†
-    struct SendList *pNextNode; //æŒ‡å‘ä¸‹ä¸€ä¸ªå‘é€ç¼“å†²çš„æŒ‡é’ˆ
+    u8  SendBuf[512];        //·¢ËÍ»º³åÇø
+    u16 DataLen;             //Êı¾İ³¤¶È
+    u8  Direction;           //·¢ËÍ·½Ïò
+    u16 OverTime;           //³¬Ê±¼ÆÊıÆ÷
+    u16 SendTimes;          //·¢ËÍ´ÎÊı
+    u32 CallId;             //ÓÃÓÚÅĞ¶ÏÊÇ·ñÊÇ±¾½Úµã¶Ì»Ø¸´
+    u8 RecvAck;             //ÊÕµ½Ack±êÊ¶
+    struct SendList *pNextNode; //Ö¸ÏòÏÂÒ»¸ö·¢ËÍ»º³åµÄÖ¸Õë
 } SEND_LIST_S;
 
 typedef struct CircleQueue
@@ -352,24 +351,24 @@ typedef struct CircleQueue
 
 typedef struct MutexStruct
 {
-    pthread_mutex_t WTCVoiceLock;   //æ— çº¿ç»™ä¸»æ§è¯­éŸ³é”
-    pthread_mutex_t CTWVoiceLock;   //ä¸»æ§ç»™ä¸­å¿ƒè¯­éŸ³é”
-    bool WTCLockStatus; //æ— çº¿ç»™ä¸»æ§çš„é”çŠ¶æ€
-    bool CTWLockStatus; //ä¸»æ§ç»™æ— çº¿çš„é”çŠ¶æ€
+    pthread_mutex_t WTCVoiceLock;   //ÎŞÏß¸øÖ÷¿ØÓïÒôËø
+    pthread_mutex_t CTWVoiceLock;   //Ö÷¿Ø¸øÖĞĞÄÓïÒôËø
+    bool WTCLockStatus; //ÎŞÏß¸øÖ÷¿ØµÄËø×´Ì¬
+    bool CTWLockStatus; //Ö÷¿Ø¸øÎŞÏßµÄËø×´Ì¬
 }MUTEX_STATUS_S;
 
 typedef union GpsUnionData
 {
     struct
     {
-        u8  Ns: 1;           //ç»´åº¦æŒ‡ç¤º 0:SOUTH 1:NORTH
-        u8  Ndeg: 7;         //ç»´åº¦    0~89
-        u8  Ew: 1;           //ç»åº¦æŒ‡ç¤º 0:EAST 1:WEST
-        u8  Nminmm: 7;       //çº¬åˆ†çš„æ•´æ•°éƒ¨åˆ† 0~59
-        u16  Nminf;       //çº¬åˆ†çš„å°æ•°éƒ¨åˆ† 0~9999
-        u8  Edeg;         //ç»åº¦    0~179
-        u8  Eminmm;       //ç»åˆ†çš„æ•´æ•°éƒ¨åˆ† 0~59
-        u16  Eminf;       //ç»åˆ†çš„å°æ•°éƒ¨åˆ† 0~9999
+        u8  Ns: 1;           //Î¬¶ÈÖ¸Ê¾ 0:SOUTH 1:NORTH
+        u8  Ndeg: 7;         //Î¬¶È    0~89
+        u8  Ew: 1;           //¾­¶ÈÖ¸Ê¾ 0:EAST 1:WEST
+        u8  Nminmm: 7;       //Î³·ÖµÄÕûÊı²¿·Ö 0~59
+        u16  Nminf;       //Î³·ÖµÄĞ¡Êı²¿·Ö 0~9999
+        u8  Edeg;         //¾­¶È    0~179
+        u8  Eminmm;       //¾­·ÖµÄÕûÊı²¿·Ö 0~59
+        u16  Eminf;       //¾­·ÖµÄĞ¡Êı²¿·Ö 0~9999
     }Data_bit;
     u8 Data[8];
 }GPS_DATA_U;
@@ -403,3 +402,4 @@ typedef struct LogInfo
 #pragma pack()
 
 #endif
+
