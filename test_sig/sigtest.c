@@ -40,6 +40,26 @@ delay(35);  延时多少合适
 #define FLC_LEN                     9
 
 
+
+/** @defgroup CSBK命令码 */
+/** @{ */
+#define PRE_CSBKO               0x3d    //111101
+#define REQ_CSBKO               0x29    //101001
+#define ACK_CSBKO               0x2c    //101100
+#define ALARM_CSBKO             0x37    //110111
+/** @} */
+
+/** @defgroup 补充业务命令码 */
+/** @{ */
+#define CALL_ALERT_SSO          0x05
+#define EN_RADIO_SSO            0x09
+#define DIS_RADIO_SSO           0x0a
+#define DIGITAL_ALARM_SSO       (0x0f-0x01) // 暂时NAS选择0X0E
+
+
+
+
+
 /**
  * @def  RTP_MAX_DATA_SIZE
  * @brief  中心语音负载长度
@@ -99,9 +119,6 @@ typedef enum _FRAME_TYPE_E
 } FRAME_TYPE_E;
 
 
-
-
-
 typedef  enum  _DATA_TEST_ITEM
 {
     ITEM_MS_REMOTE_KILL  = 0,
@@ -113,13 +130,37 @@ typedef  enum  _DATA_TEST_ITEM
     ITEM_NAS_STUN        = 6,
     ITEM_NEIGHBOR_QUERY  = 7,
     ITEM_SHORT_MESSAGE   = 8,
-    ITEM_MAX             = 9
+    ITEM_AlARM_REQ       = 9,
+    ITEM_MAX             = 10
 } DATA_TEST_ITEM;
+
+
+
+/**
+ * @struct  SUPS_CSBK_PDU
+ * @brief  补充业务CSBK
+ */
+typedef struct _SUPS_CSBK_PDU
+{
+    UINT8 uCSBKO:6;
+    UINT8 uPF  :1;
+    UINT8 uLB  :1;
+    UINT8 uFID;
+    UINT8 uSSO;
+    UINT8 uREV;
+    UINT8 auTADDR[3];
+    UINT8 auSADDR[3];
+    UINT8 auCRC[2];
+} SUPS_CSBK_PDU;
+
+
 
 
 /******************************************************************************
  *   枚举声明
  *   *************************************************************************/
+
+
 /**
  * @enum CCL_DATA_TYPE_E
  * @brief CCL数据帧类型
@@ -390,6 +431,7 @@ static void *TestDataCheckTask(void * p);
 
 
 //---函数-功能测试-具体操作--
+static void ODP_Alarm_req(void);                //9
 static void ODP_ShortMessage(void);             //8
 static void ODP_NearNodeInfoQuery(void);        //7
 static void ODP_NasStunIdt(void);               //6
@@ -403,6 +445,8 @@ static void ODP_MsDisableIdt(void);             //0
 static void Ms_ItemHandler(int item);
 static void Nas_ItemNasHandler(int item);
 static void MS_GroupMsgHandler(int item);
+static void MS_GroupAlarmHandler(int item);      // 9
+
 
 // GPS
 static void PrintFormatGpsInfo(SMS_INFO_S *SmsInfo);
@@ -420,7 +464,8 @@ DATA_ITEM_FUN_T atDataItemFun[] = {
     {ITEM_NAS_STUN       , Nas_ItemNasHandler    , ODP_NasStunIdt        , "Nas",    "Nas Stun"           },   // 6
     {ITEM_NEIGHBOR_QUERY , Nas_ItemNasHandler    , ODP_NearNodeInfoQuery , "Nas",    "Nas Neighbor Query" },   // 7
     {ITEM_SHORT_MESSAGE  , MS_GroupMsgHandler    , ODP_ShortMessage      , "Group",  "Ms Short Message"   },   // 8
-    {ITEM_MAX            , NULL                  , NULL                  ,  NULL,     NULL                }    // 9
+    {ITEM_AlARM_REQ      , MS_GroupAlarmHandler  , ODP_Alarm_req         , "Group",  "Alarm req"          },   // 9
+    {ITEM_MAX            , NULL                  , NULL                  ,  NULL,     NULL                }    // 10
 };
 
 
@@ -1306,9 +1351,6 @@ void ODP_ShortMessage(void)     //8
     CcSMessage.MsgData.sms_data[16] = '3';
     CcSMessage.MsgData.sms_data[17] = 0x00;
 
-    CcSMessage.MsgData.receiver_num[0] = s_GroupID[0];
-    CcSMessage.MsgData.receiver_num[1] = s_GroupID[1];
-    CcSMessage.MsgData.receiver_num[2] = s_GroupID[2];
     CcSMessage.MsgData.valid_length = s_Message_len*2;
 
     pSms_data = CcSMessage.MsgData.sms_data;
@@ -1332,6 +1374,103 @@ void ODP_ShortMessage(void)     //8
 
     sendto(SigSocket, &CcSMessage, sizeof(CC_CCL_DL_T), 0, (struct sockaddr *)(&CclSigAddr), UDPSize);
 }
+
+
+
+void ODP_Alarm_req(void)     //9
+{
+
+    printf("Alarm download \n");
+    CC_CCL_DL_T CcSMessage;
+//    SUPS_CSBK_PDU *pSUPS_CSBK_PDU = NULL;
+    CcSMessage.Head = htons(0x13ec);
+    CcSMessage.Type = 0x000e;
+    CcSMessage.Datalength = sizeof(MSG_DATA_DL_T);
+    CcSMessage.Source_ID = 0xffff;
+    CcSMessage.Dest_ID = 0xffff;
+    CcSMessage.Source_Type = 0xff;
+    CcSMessage.Sig_Version = 0x02;
+    CcSMessage.Path_Num = 0xff;
+    CcSMessage.Check_Val = 0xffffffff;
+    memset(CcSMessage.Ex_head, 0xff, 11);
+    CcSMessage.MsgData.call_id = 0x0001;
+    CcSMessage.MsgData.voice_id = 0xffff;
+    CcSMessage.MsgData.source_stat = 0;
+    CcSMessage.MsgData.sms_type = MS_ALARM;
+    CcSMessage.MsgData.valid_length = 0;
+    CcSMessage.MsgData.sms_format = 0x01;
+
+    CcSMessage.MsgData.sender_num[0] = 0x00;
+    CcSMessage.MsgData.sender_num[1] = 0x00;
+    CcSMessage.MsgData.sender_num[2] = 0x01;
+    CcSMessage.MsgData.receiver_num[0] = s_GroupID[0];
+    CcSMessage.MsgData.receiver_num[1] = s_GroupID[1];
+    CcSMessage.MsgData.receiver_num[2] = s_GroupID[2];
+    sendto(SigSocket, &CcSMessage, sizeof(CC_CCL_DL_T), 0, (struct sockaddr *)(&CclSigAddr), UDPSize);
+
+
+#if 0
+//  CcSMessage.MsgData.sender_num[0] = SrcDev;
+    CcSMessage.MsgData.sender_num[0] = s_SrcDev;
+    CcSMessage.MsgData.sender_num[1] = 0x00;
+    CcSMessage.MsgData.sender_num[2] = 0x00;
+//  CcSMessage.MsgData.receiver_num[0] = DstDev;
+    CcSMessage.MsgData.receiver_num[0] = s_DstDev;
+    CcSMessage.MsgData.receiver_num[1] = 0x00;
+    CcSMessage.MsgData.receiver_num[2] = 0x00;
+    CcSMessage.MsgData.sender_num[0] = s_SrcDev;
+    CcSMessage.MsgData.receiver_num[0] = s_DstDev;
+    sendto(SigSocket, &CcSMessage, sizeof(CC_CCL_DL_T), 0, (struct sockaddr *)(&CclSigAddr), UDPSize);
+
+
+    // 不在中心写这部分
+    pSUPS_CSBK_PDU = (SUPS_CSBK_PDU *)CcSMessage.MsgData.sms_data;
+
+    pSUPS_CSBK_PDU->uLB    = 1;
+    pSUPS_CSBK_PDU->uPF    = 0;
+    pSUPS_CSBK_PDU->uCSBKO = ALARM_CSBKO;
+    pSUPS_CSBK_PDU->uFID   = 0x68;
+    pSUPS_CSBK_PDU->uSSO   = DIGITAL_ALARM_SSO;
+
+    pSUPS_CSBK_PDU->auTADDR[0]= s_GroupID[0]
+    pSUPS_CSBK_PDU->auTADDR[1]= s_GroupID[1]
+    pSUPS_CSBK_PDU->auTADDR[2]= s_GroupID[2]
+
+
+#endif
+
+
+
+
+
+
+
+
+
+#if 0
+    /**
+    * @struct  SUPS_CSBK_PDU
+    * @brief  补充业务CSBK
+    */
+    typedef struct _SUPS_CSBK_PDU
+    {
+        UINT8 uCSBKO:6;
+        UINT8 uPF  :1;
+        UINT8 uLB  :1;
+        UINT8 uFID;
+        UINT8 uSSO;
+        UINT8 uREV;
+        UINT8 auTADDR[3];
+        UINT8 auSADDR[3];
+        UINT8 auCRC[2];
+    } SUPS_CSBK_PDU;
+#endif
+
+
+
+}
+
+
 
 
 // 手台下行准备
@@ -1416,6 +1555,35 @@ void MS_GroupMsgHandler(int item)      // 8
     Pause();
     atDataItemFun[item].pFunOdp();  // ODP_ShortMessage();
 }
+
+
+void MS_GroupAlarmHandler(int item)  //  9
+{
+
+    // 组ID
+    char name[100];
+    unsigned int Group, dst = 0;
+    unsigned char *pBuff = (unsigned char *)&dst;
+    snprintf(name, sizeof(name), "%d-%s", item, atDataItemFun[item].ItemName);
+    while (1)
+    {
+        printf("please input the group ID 0~16777215(0xFFFFFF) to test\n");
+        dst = get_value_u32(name, "group ID>", &dst);
+        if (dst >= 0  && dst <= 16777215)
+        {
+            printf("you get the group_ID %d(%#010x)\n\n", dst, dst);
+            break;
+        }
+        printf("the msg group_ID is not in range\n\n");
+    }
+    Group = dst;
+    dst = U32Change2BigEndian(dst) >> 8;
+    set_item_ID_input(item, pBuff, 0, 0);
+    printf("\nSend:\n\tNas ---------------------> Group(%d)\n", Group);
+    Pause();
+    atDataItemFun[item].pFunOdp();
+}
+
 
 
 // 设置全局变量
@@ -1922,19 +2090,19 @@ printf("\n\nData test items as follows\n\n\
 \t6 - Nas Stun\n\
 \t7 - Nas Neighbor Query\n\
 \t8 - Ms Short Message\n\
-\nPlease press the 0 ~ 8 to select...\n");
+\t9 - Nas Alarm req\n\
+\nPlease press the 0 ~ 9 to select...\n");
 
         item = get_value_u32(name, "Entry Item>", &len);
-        if ((item >=0 ) && (item <= 8))
+        if ((item >=0 ) && (item <= 9))
         {
             Pause();
             return item;
         }
-        else if (item > 8)
+        else if (item > 9)
         {
             printf("\nThere is no this option, try again ...\n");
             Pause();
-
         }
     }
 }
@@ -2582,6 +2750,17 @@ void SMS_NasCommonCall(SMS_INFO_S *ptSmsInfo)
 }
 
 
+
+void SMS_AlarmGroupCall(SMS_INFO_S *ptSmsInfo)
+{
+    get_id_cc(ptSmsInfo->SenderNum, GROUP_ID_SIZE);
+    get_id_cc(ptSmsInfo->ReceiverNum, GROUP_ID_SIZE);
+    printf("Receive:\n\tSrc(%s) ---------------------> Dst(%s)\n", ptSmsInfo->SenderNum, ptSmsInfo->ReceiverNum);
+    printf("\n\n");
+}
+
+
+
 typedef void (*pSMS_CALL)(SMS_INFO_S *ptSmsInfo);
 typedef struct _DATA_INFO_T
 {
@@ -2600,6 +2779,8 @@ DATA_INFO_T tSigType[] = {
     {SIG_PTT_OFF_ACK        ,   "sig_ptt_off_ack"       },
 };
 
+
+// 接收
 DATA_INFO_T tSmsType[] = {
     {MESSAGE_PRIVATE_CALL   ,  "message_private_cal"    , NULL},
     {MESSAGE_GROUP_CALL     ,  "message_group_call"     , SMS_MessageGroupCall},
@@ -2624,7 +2805,7 @@ DATA_INFO_T tSmsType[] = {
     {NAS_NEAR_REPORT        ,  "nas_near_report"        , NULL},
     {VARIANCE_HRESHOLD      ,  "variance_hreshold"      , NULL},
     {DISCON_ALARM           ,  "discon_alarm"           , NULL},
-    {MS_ALARM               ,  "ms_alarm"               , NULL},
+    {MS_ALARM               ,  "ms_alarm"               , SMS_AlarmGroupCall},
     {DISCON_NAS_ALARM_CLEAR ,  "discon_nas_alarm_clear" , NULL},
     {MS_ALARM_CLEAR         ,  "ms_alarm_clear"         , NULL},
     {DSP_PRINT_LOG          ,  "dsp_print_log"          , NULL},
@@ -2688,7 +2869,7 @@ void *TestDataCheckTask(void * p)
         printf("\n\n==================RECEIVE MSG=======================\n");
         pHead = (CENTER_CMD_SHARE_HEAD *)RecvBuf;
 
-        for (i = 0; i < sizeof(tSigType)/sizeof(tSigType[0]) ;i++)
+        for (i = 0; i < sizeof(tSigType)/sizeof(tSigType[0]); i++)
         {
             if (pHead->SigType == tSigType[i].TypeFlag)
             {
@@ -2800,7 +2981,7 @@ void TestVoiceDll2ccl()
     int format, FrameLen;
     format = VoiceCc2cclFormatGet();  // 获取语音包格式
     FrameLen = VoiceDdl2CclLenGet();
-    SetVoiceID();  // 语音功能-手动设置全局变量CallingID, CalledID
+    SetVoiceID();                     // 语音功能-手动设置全局变量CallingID, CalledID
     VoiceDdl2CclData(CT_LC_HEADER);
     VoiceDdl2CclSend(FrameLen, format);
     VoiceDdl2CclData(CT_LC_TERMINATOR);
@@ -2861,15 +3042,15 @@ int TestOption(int argc, char *argv[])
             case 'D':
             {
                 // 数据下行测试
-                TestDataCheckTaskCreate();
-                TestDataCc2ccl();
+                TestDataCheckTaskCreate();  // 等待接收程序
+                TestDataCc2ccl();           // 数据下行
                 break;
             }
             case 'g':
             case 'G':
             {
                 // 数据下行测试
-                printf("wait for data from MS or Nas\n\n");
+                printf("============Wait For Data From Ms Or Nas============\n\n");
                 TestDataCheckTaskCreate();
                 break;
             }
@@ -2925,6 +3106,7 @@ void CompileTime()
  *              -u  # 语音上行测试
  *              -p  # 压力测试
  *              -h  # 帮助
+ *              -g  # 数据上行
 */
 int main(int argc, char *argv[])
 {
@@ -2947,7 +3129,7 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    printf("\n\n~~go~to~sleep~~\n\n");
+    printf("\n\n~~Press~the~[CTR+c]~to~quit~~\n\n");
     while(1)
     {
         sleep(5);
